@@ -1,13 +1,13 @@
 from setuptools import setup, find_packages
 
-from beta_dia import param_g
+import beta_dia
 
 with open("README.md", "r") as readme_file:
     long_description = readme_file.read()
 
 setup(
     name='beta_dia',
-    version=param_g.beta_version,
+    version=beta_dia.__version__,
     license='Apache',
     description='A cool project that does something awesome on diaPASEF data.',
     author='Song Jian',

@@ -270,7 +270,8 @@ def convert_cols_to_diann(df):
 
 
 def get_args():
-    name = f"Beta-DIA {param_g.beta_version}"
+    import beta_dia
+    name = f"Beta-DIA {beta_dia.__version__}"
     print("*" * (len(name) + 4))
     print(f"* {name} *")
     print("*" * (len(name) + 4))

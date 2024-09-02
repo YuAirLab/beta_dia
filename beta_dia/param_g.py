@@ -1,7 +1,5 @@
 import torch
 
-beta_version = '0.1.0'
-
 is_compare_mode = False
 is_time_log = False
 is_save_pkl = False
