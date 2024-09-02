@@ -1,0 +1,8 @@
+graft beta_dia
+prune **/private*
+prune __pycache__
+exclude beta_dia/main.py
+exclude beta_dia/main_core.py
+
+prune paper
+prune scripts
