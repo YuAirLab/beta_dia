@@ -15,7 +15,7 @@ We recommend using [Conda](https://www.anaconda.com/) to create a Python environ
 
 1. Create a Python environment with version 3.9.18.
     ```bash
-    conda create -n beta_env python=3.9.18, numpy<2.0.0
+    conda create -n beta_env python=3.9.18 "numpy<2.0.0"
     conda activate beta_env
     ```
 
