@@ -410,6 +410,7 @@ def process_frame(
     with open(tdf_bin_file_name, "rb") as infile:
         frame_start = frame_indptr[frame_id]
         frame_end = frame_indptr[frame_id + 1]
+        frame_peak = frame_end - frame_start
         if frame_start != frame_end:
             offset = tims_offset_values[frame_id]
             infile.seek(offset)
@@ -456,17 +457,24 @@ def process_frame(
                     )
             elif compression_type == 2:
                 import pyzstd
-                compressed_data = infile.read(bin_size - 8)
-                decompressed_bytes = pyzstd.decompress(compressed_data)
-                (
-                    scan_indices_,
-                    tof_indices_,
-                    intensities_
-                ) = parse_decompressed_bruker_binary_type2(decompressed_bytes)
+                try:
+                    compressed_data = infile.read(bin_size - 8)
+                    decompressed_bytes = pyzstd.decompress(compressed_data)
+                    (
+                        scan_indices_,
+                        tof_indices_,
+                        intensities_
+                    ) = parse_decompressed_bruker_binary_type2(decompressed_bytes)
+                    if len(tof_indices_) != frame_peak: # sql != bin
+                        scan_indices_ = [frame_peak] + [0] * (max_scan_count - 2)
+                        tof_indices_, intensities_ = 0, 0
+                except:
+                    scan_indices_ = [frame_peak] + [0] * (max_scan_count - 2)
+                    tof_indices_, intensities_ = 0, 0
             else:
                 raise ValueError("TimsCompressionType is not 1 or 2.")
             scan_start = frame_id * max_scan_count
-            scan_end = scan_start + scan_count
+            scan_end = scan_start + max_scan_count - 1
             scan_indptr[scan_start: scan_end] = scan_indices_
             tof_indices[frame_start: frame_end] = tof_indices_
             intensities[frame_start: frame_end] = intensities_

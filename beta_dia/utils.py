@@ -272,9 +272,9 @@ def convert_cols_to_diann(df):
 def get_args():
     import beta_dia
     name = f"Beta-DIA {beta_dia.__version__}"
-    print("*" * (len(name) + 4))
-    print(f"* {name} *")
-    print("*" * (len(name) + 4))
+    print(' ' * 9, "*" * (len(name) + 4))
+    print(' ' * 9, f"* {name} *")
+    print(' ' * 9, "*" * (len(name) + 4))
 
     parser = argparse.ArgumentParser('Beta-DIA for diaPASEF analysis')
     parser.add_argument(
@@ -309,13 +309,17 @@ def init_multi_ws(ws):
     param_g.multi_ws = multi_ws
     param_g.file_num = len(param_g.multi_ws)
 
+    i = 'The specified ws does not end with .d or does not contain a .d folder.'
+    if param_g.file_num == 0:
+        print(i)
 
-def init_single_ws(ws_i, total, ws, out_name, dir_lib, lib):
+
+def init_single_ws(ws_i, total, ws, out_name, dir_lib, entry_num):
     param_g.ws = ws
     param_g.dir_out = (ws / out_name)
     param_g.dir_out.mkdir(exist_ok=True)
     Logger.set_logger(param_g.dir_out, is_time_name=param_g.is_time_log)
     logger.info(f'====================={ws_i+1}/{total}=====================')
-    logger.info('Workspace is: ' + str(ws))
+    logger.info('.d: ' + str(ws.name))
     logger.info('Lib: ' + Path(dir_lib).name)
-    logger.info(f'Lib prs: {len(lib.df_pr)}')
+    logger.info(f'Lib prs: {entry_num}')

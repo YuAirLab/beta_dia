@@ -97,6 +97,9 @@ def numba_paral_centroid(
         push = all_push[start : end]
         height = all_height[start : end]
 
+        if np.sum(height) == 0:
+            continue
+
         # sum
         for i in range(len(tof)):
             tof_i = tof[i]
@@ -142,7 +145,6 @@ def numba_paral_centroid(
                         all_height_suppressed[start + i] = 0.
                     elif height_raw_ii < height_raw_i:
                         all_height_suppressed[start + ii] = 0.
-
     all_height_suppressed = all_height_summed * all_height_suppressed
 
     return all_height_summed, all_height_suppressed
@@ -152,14 +154,14 @@ def load_ms(ws):
     ms = Tims(ws)
     device = ms.get_device_name()
     gradient = ms.get_scan_rts()[-1] / 60.
-    logger.info('tims_name: {}, gradient: {:.2f}min'.format(device, gradient))
+    logger.info('device_name: {}, gradient: {:.2f}min'.format(device, gradient))
     return ms
 
 
 class Tims():
     @profile
     def __init__(self, dir_d):
-        logger.info('Loading tims data...')
+        logger.info('Loading .d data...')
         self.dir_d = dir_d
 
         self.bruker = bruker.TimsTOF(str(dir_d))
@@ -179,7 +181,7 @@ class Tims():
         self.d_ms1_maps = d_ms1_maps
         self.d_ms2_maps = d_ms2_maps
 
-        logger.info('Loading times data finished.')
+        logger.info('Loading .d data finished.')
 
     @property
     def frame_nums(self):
@@ -294,7 +296,7 @@ class Tims():
         push_idx = push_idx.astype(np.int16) # existing subtraction
         all_push = numba_paral_repeat(push_idx, self.bruker.push_indptr)
 
-        # ion -- windown
+        # ion -- window
         swath = self.get_swath()
         quad_center_values = self.bruker.quad_mz_values.mean(axis=1)
         quad_window_ids = np.digitize(quad_center_values, swath)
