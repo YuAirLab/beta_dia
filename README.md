@@ -57,7 +57,7 @@ It may also be compatible with other formats of spectral libraries based on requ
 This parameter is used to specify the .d folder or the folder containing multiple .d folders that need to be analyzed.
 
 Other optional params are list below by entering `beta_dia -h`:
-```bash
+```
        ******************
        * Beta-DIA x.y.z *
        ******************
