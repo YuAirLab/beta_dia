@@ -6,10 +6,6 @@ is_save_pkl = False
 
 is_save_final = True
 
-device = torch.device('cuda:0')
-device_name = torch.cuda.get_device_name(device)
-torch.backends.cudnn.benchmark = True
-
 # placeholder
 ws = None
 dir_out = None
@@ -30,17 +26,6 @@ target_batch_max = 450000
 rubbish_q_cut = 0.5
 # protein inference q cut
 inference_q_cut = 0.05
-# xic extraction occupied the GPU memory ratio
-if '4090' in device_name:
-    batch_xic_seed = 5000
-    batch_xic_locus = batch_xic_seed * 5
-    batch_deep_center = 10000
-    batch_deep_big = 5000
-else:
-    batch_xic_seed = 4000
-    batch_xic_locus = batch_xic_seed * 5
-    batch_deep_center = 10000
-    batch_deep_big = 2000
 
 # widely used
 fg_num = 12

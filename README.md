@@ -56,6 +56,21 @@ It may also be compatible with other formats of spectral libraries based on requ
 - `-ws`<br>
 This parameter is used to specify the .d folder or the folder containing multiple .d folders that need to be analyzed.
 
+Other optional params are list below by entering `beta_dia -h`:
+```bash
+       ******************
+       * Beta-DIA x.y.z *
+       ******************
+Usage: beta_dia [-h] -ws WS -lib LIB [-out_name OUT_NAME] [-gpu_id GPU_ID]
+
+optional arguments:
+  -h, --help          show this help message and exit
+  -ws WS              specify the folder that is .d or contains .d files.
+  -lib LIB            specify the absolute path of a .speclib spectra library.
+  -out_name OUT_NAME  specify the folder name of outputs. Default: beta_dia.
+  -gpu_id GPU_ID      specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0.
+```
+
 ### Output
 Beta-DIA will generate **`beta_dia/report_beta.log.txt`** and **`beta_dia/report_beta.tsv`** in each .d folder. 
 The report_beta.tsv contains precursor and protein IDs, as well as plenty of associated information. 
@@ -92,5 +107,8 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
 ## Changelog
 
 ### 0.1.0
-
   * FEAT: first commit on GitHub.
+### 0.1.1
+  * FIX: loading .d even with missing or occupied frame.
+### 0.1.2
+  * FEAT: support the selection of a GPU to be used.

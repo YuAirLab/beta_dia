@@ -48,7 +48,7 @@ def convert_numba_to_tensor(x):
 
 
 def create_cuda_zeros(shape, dtype=torch.float32):
-    x = torch.zeros(shape, dtype=dtype, device=param_g.device)
+    x = torch.zeros(shape, dtype=dtype, device=param_g.gpu_id)
     x = cuda.as_cuda_array(x)
     return x
 
@@ -276,21 +276,55 @@ def get_args():
     print(' ' * 9, f"* {name} *")
     print(' ' * 9, "*" * (len(name) + 4))
 
-    parser = argparse.ArgumentParser('Beta-DIA for diaPASEF analysis')
+    parser = argparse.ArgumentParser('beta_dia')
+
+    # required=True
     parser.add_argument(
-        '-ws', '--ws', required=True,
+        '-ws', required=True,
         help='specify the folder that is .d or contains .d files.'
     )
     parser.add_argument(
-        '-lib', '--lib', required=True,
+        '-lib', required=True,
         help='specify the absolute path of a .speclib spectra library.'
     )
+
+    # optional
     parser.add_argument(
-        '-out_name', '--out_name', type=str, default='beta_dia',
-        help='specify the folder name of outputs.'
+        '-out_name', type=str, default='beta_dia',
+        help='specify the folder name of outputs. Default: beta_dia.'
     )
+    parser.add_argument(
+        '-gpu_id', type=int, default=0,
+        help='specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0'
+    )
+
     args = parser.parse_args()
+
+    # process params
+    init_gpu_params(args.gpu_id)
+
     return Path(args.ws), Path(args.lib), args.out_name
+
+
+def init_gpu_params(gpu_id):
+    param_g.gpu_id = torch.device('cuda:' + str(gpu_id))
+    param_g.device_name = torch.cuda.get_device_name(gpu_id)
+    torch.backends.cudnn.benchmark = True
+
+    from numba import cuda
+    cuda.select_device(gpu_id)
+
+    # xic extraction occupied the GPU memory ratio
+    if '4090' in param_g.device_name:
+        param_g.batch_xic_seed = 5000
+        param_g.batch_xic_locus = param_g.batch_xic_seed * 5
+        param_g.batch_deep_center = 10000
+        param_g.batch_deep_big = 5000
+    else:
+        param_g.batch_xic_seed = 4000
+        param_g.batch_xic_locus = param_g.batch_xic_seed * 5
+        param_g.batch_deep_center = 10000
+        param_g.batch_deep_big = 2000
 
 
 def init_multi_ws(ws):

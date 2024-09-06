@@ -215,7 +215,7 @@ def my_collate(items):
 
 
 def eval_one_epoch(trainloader, model):
-    device = param_g.device
+    device = param_g.gpu_id
     model.eval()
     prob_v, label_v = [], []
 
@@ -247,7 +247,7 @@ def eval_one_epoch(trainloader, model):
 
 
 def train_one_epoch(trainloader, model, optimizer, loss_fn):
-    device = param_g.device
+    device = param_g.gpu_id
     model.train()
     epoch_loss = 0.
     for batch_idx, (batch_map, batch_map_len, batch_y) in enumerate(
@@ -360,7 +360,7 @@ def train_model_mall(malls, valid_num, labels, epochs):
 
     # model
     model = models.DeepMall(input_dim=mall_dim,
-                            feature_dim=32).to(param_g.device)
+                            feature_dim=32).to(param_g.gpu_id)
 
     # optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)

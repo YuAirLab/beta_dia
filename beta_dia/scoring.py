@@ -265,7 +265,7 @@ def scoring_xic_intensity(df_batch, xics, rts):
     elutions = df_batch[cols].values + 1e-7
 
     # boundary
-    sa_m = torch.from_numpy(elutions).cuda()
+    sa_m = torch.from_numpy(elutions).to(param_g.gpu_id)
     locus_start_v, locus_end_v = fxic.estimate_xic_boundary(xics, sa_m)
     locus_start_v = locus_start_v.astype(np.int8)
     locus_end_v = locus_end_v.astype(np.int8)

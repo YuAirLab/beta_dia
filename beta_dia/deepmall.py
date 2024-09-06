@@ -57,7 +57,7 @@ def extract_mall(
     ims = ims.permute((0, 2, 1))
     ims = ims[:, (center_idx - 1) : (center_idx + 2), :]
     pred_ims = df_batch['pred_im'].values
-    pred_ims = torch.from_numpy(pred_ims).cuda()
+    pred_ims = torch.from_numpy(pred_ims).to(param_g.gpu_id)
     pred_ims = pred_ims.unsqueeze(-1).unsqueeze(-1).expand(ims.shape)
     bias_ims = pred_ims - ims
     bias_ims[ims < 0] = param_g.tol_im_xic
@@ -67,7 +67,7 @@ def extract_mall(
     mzs = mzs.permute((0, 2, 1))
     mzs = mzs[:, (center_idx - 1) : (center_idx + 2), :]
     pred_mzs = np.stack(df_batch['fg_mz'])
-    pred_mzs = torch.from_numpy(pred_mzs).cuda()
+    pred_mzs = torch.from_numpy(pred_mzs).to(param_g.gpu_id)
     pred_mzs = pred_mzs.unsqueeze(1).expand(mzs.shape)
     ppms = 1e6 * (pred_mzs - mzs) / (pred_mzs + 1e-7)
     ppms[mzs < 1] = param_g.tol_ppm
@@ -76,7 +76,7 @@ def extract_mall(
     # sa
     cols = ['score_center_elution_' + str(i) for i in range(14)]
     elutions = df_batch[cols].values[:, 2:]
-    elutions = torch.from_numpy(elutions).cuda()
+    elutions = torch.from_numpy(elutions).to(param_g.gpu_id)
     elutions = elutions.unsqueeze(1)
 
     # area
@@ -89,23 +89,23 @@ def extract_mall(
     rts = np.repeat(rts[:, np.newaxis, :], xics.shape[1], axis=1)
     areas = np.trapz(xics, x=rts, axis=2)
     areas = areas / (areas.max(axis=1, keepdims=True) + 1e-7)
-    areas = torch.from_numpy(areas).cuda()
+    areas = torch.from_numpy(areas).to(param_g.gpu_id)
     areas = areas.unsqueeze(1)
 
     # pred intensities
     pred_heights = np.stack(df_batch['fg_height'])
-    pred_heights = torch.from_numpy(pred_heights).cuda()
+    pred_heights = torch.from_numpy(pred_heights).to(param_g.gpu_id)
     pred_heights = pred_heights.unsqueeze(1)
 
     # ion type
     fg_type = np.stack(df_batch['fg_anno']) // 1000
-    fg_type = torch.from_numpy(fg_type.astype(np.float32)).cuda()
+    fg_type = torch.from_numpy(fg_type.astype(np.float32)).to(param_g.gpu_id)
     fg_type = fg_type.unsqueeze(1)
 
     # snr
     cols = ['score_center_snr_' + str(i) for i in range(14)]
     snr = df_batch[cols].values[:, 2:]
-    snr = torch.from_numpy(snr).cuda()
+    snr = torch.from_numpy(snr).to(param_g.gpu_id)
     snr = snr.unsqueeze(1)
 
     mall = torch.cat([pred_heights,
@@ -146,7 +146,7 @@ def scoring_mall(
                         tol_im,
                         tol_ppm)
     valid_ion_nums = df_input['fg_num'].values
-    valid_ion_nums = torch.tensor(valid_ion_nums).long().cuda()
+    valid_ion_nums = torch.tensor(valid_ion_nums).long().to(param_g.gpu_id)
     with torch.no_grad():
         feature, pred = model_mall(mall, valid_ion_nums)
 

@@ -122,7 +122,7 @@ def cal_coelution_by_gaussion(xics, window_points, valids_num):
     '''
     Coelution scores by sliding windows methods
     '''
-    valids_num = torch.tensor(valids_num, device=param_g.device)
+    valids_num = torch.tensor(valids_num, device=param_g.gpu_id)
 
     # block -- profile
     block_num = xics.shape[0] * xics.shape[1]

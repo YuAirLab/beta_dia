@@ -32,7 +32,7 @@ def load_models(dir_center=None, dir_big=None):
 
 def load_model_big(dir_model, channels):
     model = models.DeepMap(channels)
-    device = torch.device('cuda')
+    device = param_g.gpu_id
     if dir_model is None:
         pt_path = Path(__file__).resolve().parent/'pretrained'/'deepbig.pt'
         model.load_state_dict(torch.load(pt_path, map_location=device))
@@ -45,7 +45,7 @@ def load_model_big(dir_model, channels):
 
 def load_model_center(dir_model, channels):
     model = models.DeepMap(channels)
-    device = torch.device('cuda')
+    device = param_g.gpu_id
     if dir_model is None:
         pt_path = Path(__file__).resolve().parent/'pretrained'/'deepcenter.pt'
         model.load_state_dict(torch.load(pt_path, map_location=device))
@@ -442,7 +442,7 @@ def scoring_maps(
         non_fg_num = maps.shape[1] - param_g.fg_num
         valid_ion_nums = non_fg_num + df_batch['fg_num'].values
         valid_ion_nums = torch.tensor(
-            np.repeat(valid_ion_nums, locus_num)).long().cuda()
+            np.repeat(valid_ion_nums, locus_num)).long().to(param_g.gpu_id)
         with torch.no_grad():
             feature, pred = model(maps, valid_ion_nums)
         torch.cuda.synchronize()  # for profile
@@ -565,7 +565,7 @@ def extract_scoring_big(
             valid_ion_nums = 4 * (2 + df_input['fg_num'].values)
             model = model_big
         maps_sub = maps[:, idx]
-        valid_ion_nums = torch.tensor(valid_ion_nums).long().cuda()
+        valid_ion_nums = torch.tensor(valid_ion_nums).long().to(param_g.gpu_id)
         with torch.no_grad():
             feature, pred = model(maps_sub, valid_ion_nums)
         pred = torch.softmax(pred, 1)
