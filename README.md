@@ -112,3 +112,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
   * FIX: loading .d even with missing or occupied frame.
 ### 0.1.2
   * FEAT: support the selection of a GPU to be used.
+### 0.2.0
+  * FEAT: polishing the prs with share fgs to optimize FDR control.

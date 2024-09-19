@@ -411,13 +411,13 @@ def refine_models(df_top, ms, model_center, model_big):
                                      maps_center,
                                      valid_nums,
                                      labels,
-                                     maps_type='Center',
+                                     maps_type='Profile-14',
                                      epochs=51)
     model_big = retrain_model_map(model_big,
                                   maps_big,
                                   4 * valid_nums,
                                   labels,
-                                  maps_type='Big',
+                                  maps_type='Profile-56',
                                   epochs=51)
     model_mall = train_model_mall(malls, valid_nums - 3, labels, epochs=51)
 

@@ -1,5 +1,3 @@
-import torch
-
 is_compare_mode = False
 is_time_log = False
 is_save_pkl = False

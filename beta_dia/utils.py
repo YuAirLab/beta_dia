@@ -297,11 +297,15 @@ def get_args():
         '-gpu_id', type=int, default=0,
         help='specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0'
     )
-
+    parser.add_argument(
+        '-save_pkl', type=bool, default=False,
+        help='save_pkl is True for the developer. Default: False'
+    )
     args = parser.parse_args()
 
     # process params
     init_gpu_params(args.gpu_id)
+    param_g.is_save_pkl = args.save_pkl
 
     return Path(args.ws), Path(args.lib), args.out_name
 
