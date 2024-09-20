@@ -298,7 +298,7 @@ def get_args():
         help='specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0'
     )
     parser.add_argument(
-        '-save_pkl', type=bool, default=False,
+        '-save_pkl', action='store_true',
         help='save_pkl is True for the developer. Default: False'
     )
     args = parser.parse_args()

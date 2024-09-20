@@ -114,3 +114,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
   * FEAT: support the selection of a GPU to be used.
 ### 0.2.0
   * FEAT: polishing the prs with share fgs to optimize FDR control.
+### 0.2.1
+  * FIX: polishing should be followed by qvalue calculation again. 

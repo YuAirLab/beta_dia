@@ -146,3 +146,79 @@ def polish_after_qvalue(df, tol_locus, tol_im, tol_ppm, tol_share_num):
     logger.info(info)
 
     return df
+
+
+
+@jit(nopython=True, nogil=True, parallel=False)
+def polish_prs_core(swath_id_v, measure_locus_v, measure_im_v,
+                fg_mz_m,
+                tol_locus, tol_im, tol_ppm, tol_share_num, is_dubious_v):
+    '''
+    Each thread processes a pr with cscore_pr ascending.
+    '''
+    for i in range(len(swath_id_v)):
+        swath_id_i = swath_id_v[i]
+        measure_locus_i = measure_locus_v[i]
+        measure_im_i = measure_im_v[i]
+        fg_mz_i = fg_mz_m[i]
+
+        for j in range(i+1, len(swath_id_v)):
+            is_dubious = is_dubious_v[j]
+            if is_dubious:
+                continue
+
+            swath_id_j = swath_id_v[j]
+            if swath_id_i != swath_id_j:
+                break
+
+            measure_locus_j = measure_locus_v[j]
+            if abs(measure_locus_i - measure_locus_j) > tol_locus:
+                continue
+
+            measure_im_j = measure_im_v[j]
+            if abs(measure_im_i - measure_im_j) > tol_im:
+                continue
+
+            fg_mz_j = fg_mz_m[j]
+            share_num = cal_fg_share_num(fg_mz_i, fg_mz_j, tol_ppm)
+            if share_num >= tol_share_num:
+                is_dubious_v[j] = True
+
+
+def polish_prs(df, tol_locus, tol_im, tol_ppm, tol_share_num):
+    logger.info('Polishing dubious prs with share fragment ions...')
+
+    assert df['group_rank'].max() == 1
+
+    df_target = df[df['decoy'] == 0]
+    df_decoy = df[df['decoy'] == 1]
+
+    df_target = df_target.sort_values(
+        by=['swath_id', 'cscore_pr'],
+        ascending=[True, False],
+        ignore_index=True
+    )
+
+    swath_id_v = df_target['swath_id'].values
+    measure_locus_v = df_target['locus'].values
+    measure_im_v = df_target['measure_im'].values
+    fg_mz_m = np.stack(df_target['fg_mz'])
+
+    is_dubious_v = np.zeros_like(swath_id_v, dtype=bool)
+
+    polish_prs_core(
+        swath_id_v, measure_locus_v, measure_im_v,
+        fg_mz_m,
+        tol_locus, tol_im, tol_ppm, tol_share_num, is_dubious_v
+    )
+
+    target_num_before = len(df_target)
+    df_target = df_target[~is_dubious_v]
+    df = pd.concat([df_target, df_decoy], ignore_index=True)
+
+    info = 'Remove dubious prs: {} from: {} targets.'.format(
+        sum(is_dubious_v), target_num_before
+    )
+    logger.info(info)
+
+    return df

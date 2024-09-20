@@ -1,4 +1,4 @@
-# Pyarmor 8.5.11 (trial), 000000, 2024-09-19T11:48:08.546156
+# Pyarmor 8.5.11 (trial), 000000, 2024-09-20T11:46:30.486467
 def __pyarmor__():
     import platform
     import sys
