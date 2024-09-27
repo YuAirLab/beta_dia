@@ -69,6 +69,7 @@ def extract_map_by_compare(df_top, ms):
             # cal measure_im for maps by locus
             n_pep, n_ion, n_cycle = ims.shape
             ims = ims.transpose(0, 2, 1).reshape(-1, n_ion)
+            scores_sa_m = scores_sa_m.cpu().numpy()
             scores_sa_m = scores_sa_m.transpose(0, 2, 1).reshape(-1, n_ion)
             measure_ims = fxic.cal_measure_im(ims, scores_sa_m)
             measure_ims = measure_ims.reshape(-1, n_cycle)
@@ -321,19 +322,23 @@ def retrain_model_map(model_maps, maps, valid_nums, labels, maps_type, epochs):
             train_loader, model_maps, optimizer, loss_fn
         )
         acc = eval_one_epoch(eval_loader, model_maps)
-        info = 'Deep{} refine epoch {}, loss: {:.3f}, acc: {:.3f}'.format(
-            maps_type, i, epoch_loss, acc
-        )
-        logger.info(info)
+        # info = 'Deep{} refine epoch {}, loss: {:.3f}, acc: {:.3f}'.format(
+        #     maps_type, i, epoch_loss, acc
+        # )
+        # logger.info(info)
 
         # early stop and save best
         if acc >= acc_best:
             acc_best = acc
             model_best = copy.deepcopy(model_maps)
             patience_counter = 0
+            info = 'Deep{} refine epoch {}, loss: {:.3f}, acc: {:.3f}'.format(
+                maps_type, i, epoch_loss, acc
+            )
         else:
             patience_counter += 1
         if patience_counter >= param_g.patient:
+            logger.info(info)
             break
 
     return model_best
@@ -372,19 +377,23 @@ def train_model_mall(malls, valid_num, labels, epochs):
     for epoch in range(epochs):
         epoch_loss = train_one_epoch(train_loader, model, optimizer, loss_fn)
         acc = eval_one_epoch(eval_loader, model)
-        info = 'DeepMall train epoch: {}, loss: {:.3f}, acc: {:.3f}'.format(
-            epoch, epoch_loss, acc
-        )
-        logger.info(info)
+        # info = 'DeepMall train epoch: {}, loss: {:.3f}, acc: {:.3f}'.format(
+        #     epoch, epoch_loss, acc
+        # )
+        # logger.info(info)
 
         # early stop and save best
         if acc >= acc_best:
             acc_best = acc
             model_best = copy.deepcopy(model)
             patient_counter = 0
+            info = 'DeepMall train epoch: {}, loss: {:.3f}, acc: {:.3f}'.format(
+                epoch, epoch_loss, acc
+            )
         else:
             patient_counter += 1
         if patient_counter >= param_g.patient:
+            logger.info(info)
             break
 
     return model_best

@@ -147,7 +147,7 @@ def cal_coelution_by_gaussion(xics, window_points, valids_num):
     scores_raw[:, :, :3] = 0.
     scores_raw[:, :, -3:] = 0.
 
-    return scores, scores_raw.cpu().numpy()
+    return scores, scores_raw
 
 
 # @profile
@@ -376,6 +376,9 @@ def extract_xics(df,
     if (rt_tolerance is None) and (cycle_num is None):  # all rt_range
         idx_start_v = np.zeros(len(df_subset), dtype=np.int32)
         cycle_num = cycle_total
+        # cycle -- rt
+        result_cycle_idx = np.broadcast_to(np.arange(cycle_total), (len(df), cycle_total))
+        result_rts = np.broadcast_to(scan_rts, (len(df), cycle_total))
     elif rt_tolerance is not None:
         cycle_num = int(rt_tolerance * 2 / cycle_time)
         if cycle_num > cycle_total:
@@ -386,38 +389,41 @@ def extract_xics(df,
         idx_start_v[idx_start_v < 0] = 0
         idx_start_max = cycle_total - cycle_num
         idx_start_v[idx_start_v > idx_start_max] = idx_start_max
+        # cycle -- rt
+        cycle_idx = np.arange(cycle_num) + idx_start_v[:, None]
+        result_cycle_idx = np.arange(cycle_total)[cycle_idx]
+        result_rts = scan_rts[cycle_idx]
     elif cycle_num is not None:
         cycle_total = len(map_gpu_ms1['scan_rts'])
         idx_start_v = df_subset['locus'].values - int(cycle_num / 2)
         idx_start_v[idx_start_v < 0] = 0
         idx_start_max = cycle_total - cycle_num
         idx_start_v[idx_start_v > idx_start_max] = idx_start_max
+        # cycle -- rt
+        cycle_idx = np.arange(cycle_num) + idx_start_v[:, None]
+        result_cycle_idx = np.arange(cycle_total)[cycle_idx]
+        result_rts = scan_rts[cycle_idx]
     else:
         assert 1 > 2, 'Set either rt_tolerance or cycle_tolerance!'
-
-    # cycle -- rt
-    cycle_idx = np.arange(cycle_num) + idx_start_v[:, None]
-    result_cycle_idx = np.arange(cycle_total)[cycle_idx]
-    result_rts = scan_rts[cycle_idx]
 
     # params
     if scope == 'center':
         query_mz_ms1 = df_subset[['pr_mz', 'pr_mz']].to_numpy()
-        query_mz_ms2 = np.stack(df_subset['fg_mz'])
+        query_mz_ms2 = np.array(df_subset['fg_mz'].values.tolist())
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif scope == 'big':
         ms1_cols = ['pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H',
                     'pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H']  # unfrag
         ms1 = df[ms1_cols].to_numpy()
-        left = np.stack(df['fg_mz_left'])
-        center = np.stack(df['fg_mz'])
-        fg_1H = np.stack(df['fg_mz_1H'])
-        fg_2H = np.stack(df['fg_mz_2H'])
+        left = np.array(df['fg_mz_left'].values.tolist())
+        center = np.array(df['fg_mz'].values.tolist())
+        fg_1H = np.array(df['fg_mz_1H'].values.tolist())
+        fg_2H = np.array(df['fg_mz_2H'].values.tolist())
         query_mz_m = np.concatenate([ms1, left, center, fg_1H, fg_2H], axis=1)
         ms1_ion_num = 4
     elif scope == 'top6':
-        query_mz_m = np.ascontiguousarray(np.stack(df['fg_mz'])[:, :6])
+        query_mz_m = np.ascontiguousarray(np.array(df['fg_mz'].values.tolist())[:, :6])
         ms1_ion_num = 0
 
     if by_pred:
@@ -572,10 +578,9 @@ def screen_locus_by_deep(df_batch, top_deep_q):
     '''
     group_size = df_batch.groupby('pr_id', sort=False).size()
     group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
-    idx, group_rank = utils.cal_group_rank(
+    group_rank = utils.cal_group_rank(
         df_batch['seek_score_sa_x_deep'].values, group_size_cumsum
     )
-    df_batch = df_batch.loc[idx].reset_index(drop=True)
     df_batch['group_rank'] = group_rank
 
     group_max = df_batch.groupby('pr_id')['seek_score_sa_x_deep'].transform(
@@ -588,33 +593,29 @@ def screen_locus_by_deep(df_batch, top_deep_q):
     return df_batch
 
 
-def concat_nonzero_locus(scores_sa_input, locus_input, ims, scores_sa_m):
+def concat_nonzero_locus(locus, scores_sa, scores_sa_m):
     '''
     After screening locus by sa, sa_input has much zero values. Selecting and
     concat the nonzero values to vectors.
     Args:
-        scores_sa_input: [n_pep, n_locus]
-        locus_input: [n_pep, n_locus]
-        ims: [n_pep, n_ion, n_locus]
+        locus: [n_pep, n_locus]
+        scores_sa: [n_pep, n_locus]
         scores_sa_m: [n_pep, n_ion, n_locus]
 
     Returns:
-        locus_1d, sa_1d, locus_num/pr, ims, sas
+        locus_v, locus_num/pr, sa_1d
     '''
-    scores_sa = scores_sa_input.cpu().numpy()
     good_idx = scores_sa > 0
+    locus_sa_v = scores_sa[good_idx].cpu().numpy()
+    locus_sas = scores_sa_m.transpose(1, 2)[good_idx].cpu().numpy()
 
-    valid_num = good_idx.sum(axis=1)
+    good_idx = good_idx.cpu().numpy()
+    locus_v = locus[good_idx]
+    locus_num = good_idx.sum(axis=1)
 
-    locus_v = locus_input[good_idx]
-    scores_sa = scores_sa[good_idx]
+    assert len(locus_v) == len(locus_sas) == locus_num.sum()
 
-    locus_ims = ims.transpose(0, 2, 1)[good_idx]
-    locus_sas = scores_sa_m.transpose(0, 2, 1)[good_idx]
-
-    assert len(locus_v) == len(locus_ims) == len(locus_sas) == valid_num.sum()
-
-    return locus_v, scores_sa, valid_num, locus_ims, locus_sas
+    return locus_v, locus_num, locus_sa_v, locus_sas
 
 
 def estimate_xic_boundary(xics, sa_gausion_m):

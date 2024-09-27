@@ -106,13 +106,15 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
 ---
 ## Changelog
 
-### 0.1.0
+#### 0.1.0
   * FEAT: first commit on GitHub.
-### 0.1.1
+#### 0.1.1
   * FIX: loading .d even with missing or occupied frame.
-### 0.1.2
+#### 0.1.2
   * FEAT: support the selection of a GPU to be used.
-### 0.2.0
+#### 0.2.0
   * FEAT: polishing the prs with share fgs to optimize FDR control.
-### 0.2.1
+#### 0.2.1
   * FIX: polishing should be followed by qvalue calculation again. 
+#### 0.3.0
+  * FEAT: refactor code to speed up

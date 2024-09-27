@@ -66,7 +66,7 @@ def extract_mall(
     # ppm
     mzs = mzs.permute((0, 2, 1))
     mzs = mzs[:, (center_idx - 1) : (center_idx + 2), :]
-    pred_mzs = np.stack(df_batch['fg_mz'])
+    pred_mzs = np.array(df_batch['fg_mz'].values.tolist())
     pred_mzs = torch.from_numpy(pred_mzs).to(param_g.gpu_id)
     pred_mzs = pred_mzs.unsqueeze(1).expand(mzs.shape)
     ppms = 1e6 * (pred_mzs - mzs) / (pred_mzs + 1e-7)
@@ -93,12 +93,12 @@ def extract_mall(
     areas = areas.unsqueeze(1)
 
     # pred intensities
-    pred_heights = np.stack(df_batch['fg_height'])
+    pred_heights = np.array(df_batch['fg_height'].values.tolist())
     pred_heights = torch.from_numpy(pred_heights).to(param_g.gpu_id)
     pred_heights = pred_heights.unsqueeze(1)
 
     # ion type
-    fg_type = np.stack(df_batch['fg_anno']) // 1000
+    fg_type = np.array(df_batch['fg_anno'].values.tolist()) // 1000
     fg_type = torch.from_numpy(fg_type.astype(np.float32)).to(param_g.gpu_id)
     fg_type = fg_type.unsqueeze(1)
 

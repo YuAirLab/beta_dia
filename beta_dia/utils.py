@@ -206,16 +206,13 @@ def save_as_tsv(df, fname):
 @jit(nopython=True, nogil=True, parallel=True)
 def cal_group_rank(x, group_size_cumsum):
     item_num = len(x)
-    result = np.zeros(item_num)
-    rank = np.zeros(item_num, dtype=np.int8)
+    rank = np.zeros(item_num, dtype=np.uint8)
     for i in prange(len(group_size_cumsum) - 1):
         start = group_size_cumsum[i]
         end = group_size_cumsum[i + 1]
         xx = x[start: end]
-        idx = np.argsort(xx)[::-1]
-        result[start: end] = idx + start
-        rank[start: end] = np.arange(end - start) + 1
-    return result, rank
+        rank[start : end] = end - start - np.argsort(xx)
+    return rank
 
 
 def push_all_zeros_back(a):
@@ -311,6 +308,8 @@ def get_args():
 
 
 def init_gpu_params(gpu_id):
+    torch.manual_seed(666)
+
     param_g.gpu_id = torch.device('cuda:' + str(gpu_id))
     param_g.device_name = torch.cuda.get_device_name(gpu_id)
     torch.backends.cudnn.benchmark = True

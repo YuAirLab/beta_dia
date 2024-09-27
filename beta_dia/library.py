@@ -135,7 +135,7 @@ def read_proteins(f):
     return df
 
 
-@profile
+# @profile
 def read_protein_ids(f):
     protein_ids_num = read_int32(f)
     ids_v, names_v, genes_v, names_indices_v, genes_indices_v, proteins_v = [], [], [], [], [], []
@@ -191,7 +191,7 @@ def read_gene(f):
     return df
 
 
-@profile
+# @profile
 def read_entry_worker(binary_data, block_positions, block_label, worker_i):
     start = block_positions[worker_i]
     end = block_positions[worker_i + 1]
@@ -307,7 +307,7 @@ def read_entry_worker(binary_data, block_positions, block_label, worker_i):
     return df
 
 
-@profile
+# @profile
 def read_diann_speclib(file_path, worker_num):
     with open(file_path, 'rb') as f:
         version, gen_decoys, gen_charges, infer_proteotypicity = read_head(f)
@@ -399,9 +399,9 @@ class Library():
         info = 'FASTA from: {}, precursors in total: {}'.format(
             fasta_name, len(df_pr)
         )
-        print(info)
+        # print(info)
 
-    @profile
+    # @profile
     def polish_lib(self, swath, ws_diann=None):
         df_lib = self.df_pr
 
@@ -469,6 +469,7 @@ class Library():
         df_lib['decoy'] = np.uint8(0)
 
         # shuffle
+        np.random.seed(1)
         df_lib = df_lib.sample(frac=1, random_state=1).reset_index(drop=True)
 
         logger.info('Polishing spectral library finished.')

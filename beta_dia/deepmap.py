@@ -267,7 +267,7 @@ def gpu_bin_maps(
                 seek += 1
 
 
-# @profile
+@profile
 def extract_maps(df_batch,
                  idx_start_m,
                  locus_num,
@@ -305,32 +305,32 @@ def extract_maps(df_batch,
     # params
     if neutron_num == -1:
         query_mz_ms1 = df_batch[['pr_mz_left', 'pr_mz_left']].to_numpy()
-        query_mz_ms2 = np.stack(df_batch['fg_mz_left'])
+        query_mz_ms2 = np.array(df_batch['fg_mz_left'].values.tolist())
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 0:
         query_mz_ms1 = df_batch[['pr_mz', 'pr_mz']].to_numpy()
-        query_mz_ms2 = np.stack(df_batch['fg_mz'])
+        query_mz_ms2 = np.array(df_batch['fg_mz'].values.tolist())
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 1:
         query_mz_ms1 = df_batch[['pr_mz_1H', 'pr_mz_1H']].to_numpy()
-        query_mz_ms2 = np.stack(df_batch['fg_mz_1H'])
+        query_mz_ms2 = np.array(df_batch['fg_mz_1H'].values.tolist())
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 2:
         query_mz_ms1 = df_batch[['pr_mz_2H', 'pr_mz_2H']].to_numpy()
-        query_mz_ms2 = np.stack(df_batch['fg_mz_2H'])
+        query_mz_ms2 = np.array(df_batch['fg_mz_2H'].values.tolist())
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num > 2:  # total
         ms1_cols = ['pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H',
                     'pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H'] # unfrag
         ms1 = df_batch[ms1_cols].to_numpy()
-        left = np.stack(df_batch['fg_mz_left'])
-        center = np.stack(df_batch['fg_mz'])
-        fg_1H = np.stack(df_batch['fg_mz_1H'])
-        fg_2H = np.stack(df_batch['fg_mz_2H'])
+        left = np.array(df_batch['fg_mz_left'].values.tolist())
+        center = np.array(df_batch['fg_mz'].values.tolist())
+        fg_1H = np.array(df_batch['fg_mz_1H'].values.tolist())
+        fg_2H = np.array(df_batch['fg_mz_2H'].values.tolist())
         query_mz_m = np.concatenate([ms1, left, center, fg_1H, fg_2H], axis=1)
         ms1_ion_num = 4
     else:
@@ -407,9 +407,7 @@ def scoring_maps(
         pred and features
     '''
     # locus
-    locus_m = np.stack(df_input['locus'])
-    if np.ndim(locus_m) == 1:
-        locus_m = locus_m.reshape(-1, 1)
+    locus_m = df_input['locus'].values.reshape(-1, 1)
     locus_num = locus_m.shape[1]
 
     # cycle start and end
@@ -444,7 +442,8 @@ def scoring_maps(
         valid_ion_nums = torch.tensor(
             np.repeat(valid_ion_nums, locus_num)).long().to(param_g.gpu_id)
         with torch.no_grad():
-            feature, pred = model(maps, valid_ion_nums)
+            with torch.cuda.amp.autocast():
+                feature, pred = model(maps, valid_ion_nums)
         torch.cuda.synchronize()  # for profile
 
         pred = torch.softmax(pred, 1)
@@ -509,10 +508,10 @@ def extract_scoring_big(
     ms1_cols = ['pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H',
                 'pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H']  # unfrag
     ms1 = df_input[ms1_cols].to_numpy()
-    left = np.stack(df_input['fg_mz_left'])
-    center = np.stack(df_input['fg_mz'])
-    fg_1H = np.stack(df_input['fg_mz_1H'])
-    fg_2H = np.stack(df_input['fg_mz_2H'])
+    left = np.array(df_input['fg_mz_left'].values.tolist())
+    center = np.array(df_input['fg_mz'].values.tolist())
+    fg_1H = np.array(df_input['fg_mz_1H'].values.tolist())
+    fg_2H = np.array(df_input['fg_mz_2H'].values.tolist())
     query_mz_m = np.concatenate([ms1, left, center, fg_1H, fg_2H], axis=1)
     ms1_ion_num = 4
 
@@ -567,7 +566,8 @@ def extract_scoring_big(
         maps_sub = maps[:, idx]
         valid_ion_nums = torch.tensor(valid_ion_nums).long().to(param_g.gpu_id)
         with torch.no_grad():
-            feature, pred = model(maps_sub, valid_ion_nums)
+            with torch.cuda.amp.autocast():
+                feature, pred = model(maps_sub, valid_ion_nums)
         pred = torch.softmax(pred, 1)
         pred = pred[:, 1].cpu().numpy()
         feature = feature.cpu().numpy()

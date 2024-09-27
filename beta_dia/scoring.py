@@ -142,6 +142,7 @@ def scoring_by_ft(df_batch, features_deep_v, x):
     return df_batch
 
 
+@profile
 def scoring_other_elution(df_batch, xics, x):
     '''
     x: ['left', '1H', '2H']
@@ -160,13 +161,12 @@ def scoring_other_elution(df_batch, xics, x):
     coelutions, elutions = fxic.cal_coelution_by_gaussion(
         xics, param_g.window_points, 2 + fg_num
     )
-    coelutions = coelutions.cpu().numpy()
 
     center_idx = int(xics.shape[-1] / 2)
     idx_x = np.arange(len(df_batch))
 
-    coelutions = coelutions[idx_x, center_idx]
-    elutions = elutions[idx_x, :, center_idx]
+    coelutions = coelutions[idx_x, center_idx].cpu().numpy()
+    elutions = elutions[idx_x, :, center_idx].cpu().numpy()
 
     # sa for 14 ions
     m = elutions.shape[-1]
@@ -195,6 +195,7 @@ def scoring_other_elution(df_batch, xics, x):
     return df_batch
 
 
+@profile
 def scoring_main_elution(df_batch, xics, x):
     '''
     x: ['center', 'center_p1', 'center_p2']
@@ -211,13 +212,12 @@ def scoring_main_elution(df_batch, xics, x):
     coelutions, elutions = fxic.cal_coelution_by_gaussion(
         xics, param_g.window_points, 2 + fg_num
     )
-    coelutions = coelutions.cpu().numpy()
 
     center_idx = int(xics.shape[-1] / 2)
     idx_x = np.arange(len(df_batch))
 
-    coelutions = coelutions[idx_x, center_idx]
-    elutions = elutions[idx_x, :, center_idx]
+    coelutions = coelutions[idx_x, center_idx].cpu().numpy()
+    elutions = elutions[idx_x, :, center_idx].cpu().numpy()
 
     # sa for 14 ions and its mean
     df_batch[f'score_{x}_coelution'] = coelutions.astype(np.float32)
@@ -243,7 +243,7 @@ def scoring_main_elution(df_batch, xics, x):
 
     # sum of top1/2/3 b ions
     if x.find('p') == -1: # ppm-10/5 are not available
-        fg_anno = np.stack(df_batch['fg_anno'])
+        fg_anno = np.array(df_batch['fg_anno'].values.tolist())
         fg_type = fg_anno // 1000
         fg_elutions[fg_type != 1] = 0  # non-b series set to 0
         fg_elutions = np.sort(fg_elutions, axis=1)[:, ::-1]
@@ -254,6 +254,7 @@ def scoring_main_elution(df_batch, xics, x):
     return df_batch, utils.convert_numba_to_tensor(xics)
 
 
+@profile
 def scoring_xic_intensity(df_batch, xics, rts):
     '''
     Only top-6 intensities are consideration.
@@ -274,10 +275,10 @@ def scoring_xic_intensity(df_batch, xics, rts):
     df_batch['score_elute_span'] = locus_end_v - locus_start_v
 
     # outside of boundary set to 0
-    xics = xics.cpu().numpy()[:, :8, :]
+    xics = xics[:, :8, :].cpu().numpy()
     mask1 = np.arange(xics.shape[2]) >= locus_start_v[:, None, None]
     mask2 = np.arange(xics.shape[2]) <= locus_end_v[:, None, None]
-    xics = xics * mask1 * mask2
+    xics = xics * (mask1 & mask2)
 
     # intensity：ms1 and ms2_total
     ms1_heights = xics[:, 0, center_idx]
@@ -301,7 +302,7 @@ def scoring_xic_intensity(df_batch, xics, rts):
     df_batch['score_intensity_ms1_ms2_ratio'] = np.log(ms1_ms2_ratio + 1e-7)
 
     # intensity: similarity
-    ms2_lib = np.stack(df_batch['fg_height'])[:, :6]
+    ms2_lib = np.array(df_batch['fg_height'].values.tolist())[:, :6]
     pcc = utils.cal_sa_by_np(ms2_lib, ms2_heights_norm)
     df_batch['score_intensity_similarity'] = pcc
     df_batch['score_intensity_similarity_cube'] = pcc ** 3
@@ -357,6 +358,7 @@ def scoring_rt(df_batch):
     return df_batch
 
 
+@profile
 def scoring_center_snr(df_batch, xics):
     '''
     Signal is the apex intensiy, noise is the median of profile.
@@ -398,6 +400,7 @@ def scoring_center_snr(df_batch, xics):
     return df_batch
 
 
+@profile
 def scoring_center_im(df_batch, ims_input):
     '''
     1. imbias for 14 ions
@@ -445,6 +448,7 @@ def scoring_center_im(df_batch, ims_input):
     return df_batch
 
 
+@profile
 def scoring_center_mz(df_batch, mzs_input):
     '''
     1. ppm for 14 ions
@@ -463,7 +467,7 @@ def scoring_center_mz(df_batch, mzs_input):
 
     # ppm
     mzs_pr = df_batch['pr_mz'].values.reshape(-1, 1)
-    mzs_fg = np.stack(df_batch['fg_mz'])
+    mzs_fg = np.array(df_batch['fg_mz'].values.tolist())
     mzs_pred = np.concatenate([mzs_pr, mzs_pr, mzs_fg], axis=1)
     ppm = 1e6 * np.abs(mzs_pred - mzs) / (mzs_pred + 1e-7)
     ppm[ppm > param_g.tol_ppm] = param_g.tol_ppm
@@ -506,7 +510,7 @@ def scoring_meta(df):
     df['score_fg_num'] = df['fg_num'].astype(np.int8)
 
     # frag info：height
-    height = np.stack(df['fg_height']).astype(np.float32)  # [k, m]
+    height = np.array(df['fg_height'].values.tolist())  # [k, m]
     height = height[:, 1:]
     columns = ['score_lib_height_' + str(i) for i in range(height.shape[-1])]
     height = pd.DataFrame(height, columns=columns)

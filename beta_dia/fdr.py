@@ -285,7 +285,7 @@ def cal_q_pr_first(df_input, batch_size, n_model, model_trained=None):
 
     # models
     if model_trained is None:
-        param = (25, 20, 15, 10, 5)
+        param = (20, 10, 5)
         mlps = [MLPClassifier(max_iter=1,
                               shuffle=True,
                               random_state=i,  # init weights and shuffle
@@ -309,9 +309,7 @@ def cal_q_pr_first(df_input, batch_size, n_model, model_trained=None):
     if df.group_rank.max() > 1:
         group_size = df.groupby('pr_id', sort=False).size()
         group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
-        idx, group_rank = utils.cal_group_rank(df.cscore_pr.values,
-                                               group_size_cumsum)
-        df = df.loc[idx].reset_index(drop=True)
+        group_rank = utils.cal_group_rank(df.cscore_pr.values, group_size_cumsum)
         df['group_rank'] = group_rank
 
     df_top = df[df['group_rank'] == 1].reset_index(drop=True)
@@ -364,9 +362,7 @@ def cal_q_pr_second(df_input, batch_size, n_model):
     if df_input['group_rank'].max() > 1:
         group_size = df_input.groupby('pr_id', sort=False).size()
         group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
-        idx, group_rank = utils.cal_group_rank(df_input.cscore_pr.values,
-                                               group_size_cumsum)
-        df_input = df_input.loc[idx].reset_index(drop=True)
+        group_rank = utils.cal_group_rank(df_input.cscore_pr.values, group_size_cumsum)
         df_input['group_rank'] = group_rank
 
     df_top = df_input[df_input['group_rank'] == 1].reset_index(drop=True)

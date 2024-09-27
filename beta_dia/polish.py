@@ -104,7 +104,7 @@ def polish_after_qvalue(df, tol_locus, tol_im, tol_ppm, tol_share_num):
     swath_id_v = df_target['swath_id'].values
     measure_locus_v = df_target['locus'].values
     measure_im_v = df_target['measure_im'].values
-    fg_mz_m = np.stack(df_target['fg_mz'])
+    fg_mz_m = np.array(df_target['fg_mz'].values.tolist())
     cscore_v = df_target['cscore_pr'].values
 
     is_fg_share_m = np.zeros((len(swath_id_v), fg_mz_m.shape[-1]), dtype=bool)
@@ -202,7 +202,7 @@ def polish_prs(df, tol_locus, tol_im, tol_ppm, tol_share_num):
     swath_id_v = df_target['swath_id'].values
     measure_locus_v = df_target['locus'].values
     measure_im_v = df_target['measure_im'].values
-    fg_mz_m = np.stack(df_target['fg_mz'])
+    fg_mz_m = np.array(df_target['fg_mz'].values.tolist())
 
     is_dubious_v = np.zeros_like(swath_id_v, dtype=bool)
 
