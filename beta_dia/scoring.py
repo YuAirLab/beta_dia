@@ -128,16 +128,15 @@ def scoring_by_deep(df_batch, scores_deep_v, x):
     return df_batch
 
 
+@profile
 def scoring_by_ft(df_batch, features_deep_v, x):
     # x: ['pre', 'refine_p1', 'refine_p2']
     features = [x for x in features_deep_v if x is not None]
     features = np.concatenate(features, axis=1)
 
     m = features.shape[-1]
-    features = features.astype(np.float32)
     columns = [f'score_ft_deep_{x}_{i}' for i in range(m)]
-    features = pd.DataFrame(features, columns=columns)
-    df_batch = pd.concat([df_batch, features], axis=1)
+    df_batch[columns] = features
 
     return df_batch
 
@@ -170,10 +169,8 @@ def scoring_other_elution(df_batch, xics, x):
 
     # sa for 14 ions
     m = elutions.shape[-1]
-    elutions = elutions.astype(np.float32)
     columns = [f'score_{x}_elution_{i}' for i in range(m)]
-    df_elution = pd.DataFrame(elutions, columns=columns)
-    df_batch = pd.concat([df_batch, df_elution], axis=1)
+    df_batch[columns] = elutions
 
     # mean of 14 ions
     df_batch[f'score_{x}_coelution'] = coelutions
@@ -223,10 +220,8 @@ def scoring_main_elution(df_batch, xics, x):
     df_batch[f'score_{x}_coelution'] = coelutions.astype(np.float32)
 
     m = elutions.shape[-1]
-    elutions = elutions.astype(np.float32)
     columns = [f'score_{x}_elution_{i}' for i in range(m)]
-    df_elution = pd.DataFrame(elutions, columns=columns)
-    df_batch = pd.concat([df_batch, df_elution], axis=1)
+    df_batch[columns] = elutions
 
     # mean of top-6 ions; mean w/o norm for remaining ions
     fg_elutions = elutions[:, 2:].copy()
@@ -243,7 +238,8 @@ def scoring_main_elution(df_batch, xics, x):
 
     # sum of top1/2/3 b ions
     if x.find('p') == -1: # ppm-10/5 are not available
-        fg_anno = np.array(df_batch['fg_anno'].values.tolist())
+        cols_anno = ['fg_anno_' + str(i) for i in range(param_g.fg_num)]
+        fg_anno = df_batch[cols_anno].values
         fg_type = fg_anno // 1000
         fg_elutions[fg_type != 1] = 0  # non-b series set to 0
         fg_elutions = np.sort(fg_elutions, axis=1)[:, ::-1]
@@ -294,15 +290,15 @@ def scoring_xic_intensity(df_batch, xics, rts):
     ms2_heights_norm = ms2_heights / row_max
     m = ms2_heights_norm.shape[-1]
     columns = ['score_intensity_ms2_relative_' + str(i) for i in range(m)]
-    ms2_heights_norm = pd.DataFrame(ms2_heights_norm, columns=columns)
-    df_batch = pd.concat([df_batch, ms2_heights_norm], axis=1)
+    df_batch[columns] = ms2_heights_norm
 
     # intensity: ms1/ms2
     ms1_ms2_ratio = ms1_heights / (ms2_height_sum + 1e-7)
     df_batch['score_intensity_ms1_ms2_ratio'] = np.log(ms1_ms2_ratio + 1e-7)
 
     # intensity: similarity
-    ms2_lib = np.array(df_batch['fg_height'].values.tolist())[:, :6]
+    cols_height = ['fg_height_' + str(i) for i in range(6)]
+    ms2_lib = df_batch[cols_height].values
     pcc = utils.cal_sa_by_np(ms2_lib, ms2_heights_norm)
     df_batch['score_intensity_similarity'] = pcc
     df_batch['score_intensity_similarity_cube'] = pcc ** 3
@@ -325,8 +321,7 @@ def scoring_xic_intensity(df_batch, xics, rts):
     ms2_heights_norm = ms2_heights / row_max
     m = ms2_heights_norm.shape[-1]
     columns = ['score_area_relative_' + str(i) for i in range(m)]
-    ms2_heights_norm = pd.DataFrame(ms2_heights_norm, columns=columns)
-    df_batch = pd.concat([df_batch, ms2_heights_norm], axis=1)
+    df_batch[columns] = ms2_heights_norm
 
     # area: ms1/ms2
     ms1_ms2_ratio = ms1_heights / (ms2_height_sum + 1e-7)
@@ -378,8 +373,7 @@ def scoring_center_snr(df_batch, xics):
     # 1. snrs for 14 ions
     m = snr.shape[-1]
     columns = ['score_center_snr_' + str(i) for i in range(m)]
-    df_snr = pd.DataFrame(np.log(snr), columns=columns)
-    df_batch = pd.concat([df_batch, df_snr], axis=1)
+    df_batch[columns] = np.log(snr)
 
     # 2. mean
     snr_average = snr.sum(axis=1) / (2 + fg_num)
@@ -424,8 +418,7 @@ def scoring_center_im(df_batch, ims_input):
     # 1. imbias for 14 ions
     m = bias.shape[-1]
     columns = ['score_imbias_' + str(i) for i in range(m)]
-    df_imbias = pd.DataFrame(bias, columns=columns)
-    df_batch = pd.concat([df_batch, df_imbias], axis=1)
+    df_batch[columns] = bias
 
     # 2. mean
     bias_ms2 = bias[:, 2:]
@@ -467,7 +460,8 @@ def scoring_center_mz(df_batch, mzs_input):
 
     # ppm
     mzs_pr = df_batch['pr_mz'].values.reshape(-1, 1)
-    mzs_fg = np.array(df_batch['fg_mz'].values.tolist())
+    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+    mzs_fg = df_batch[cols_center].values
     mzs_pred = np.concatenate([mzs_pr, mzs_pr, mzs_fg], axis=1)
     ppm = 1e6 * np.abs(mzs_pred - mzs) / (mzs_pred + 1e-7)
     ppm[ppm > param_g.tol_ppm] = param_g.tol_ppm
@@ -475,8 +469,7 @@ def scoring_center_mz(df_batch, mzs_input):
     # 1. ppm for 14 ions
     m = ppm.shape[-1]
     columns = ['score_ppm_' + str(i) for i in range(m)]
-    df_ppm = pd.DataFrame(ppm, columns=columns)
-    df_batch = pd.concat([df_batch, df_ppm], axis=1)
+    df_batch[columns] = ppm
 
     # 2. mean
     ppm_ms2 = ppm[:, 2:]
@@ -499,22 +492,21 @@ def scoring_center_mz(df_batch, mzs_input):
     return df_batch
 
 
+@profile
 def scoring_meta(df):
     # pr info: mz, charge(one-hot), len, fg_num，
     pr_charges = pd.get_dummies(df['pr_charge']).astype(np.int8)
     columns = ['score_pr_charge_' + str(i) for i in range(pr_charges.shape[1])]
-    pr_charges.columns = columns
-    df = pd.concat([df, pr_charges], axis=1)
+    df[columns] = pr_charges.values
 
     df['score_pr_len'] = df['simple_seq'].str.len().astype(np.int8)
     df['score_fg_num'] = df['fg_num'].astype(np.int8)
 
     # frag info：height
-    height = np.array(df['fg_height'].values.tolist())  # [k, m]
-    height = height[:, 1:]
+    cols_height = ['fg_height_' + str(i) for i in range(1, param_g.fg_num)]
+    height = df[cols_height].values  # [k, m]
     columns = ['score_lib_height_' + str(i) for i in range(height.shape[-1])]
-    height = pd.DataFrame(height, columns=columns)
-    df = pd.concat([df, height], axis=1)
+    df[columns] = height
 
     return df
 
@@ -640,10 +632,8 @@ def update_scores(df, ms, model_center, model_big, model_mall):
             df_batch['score_mall'] = scores_mall
 
             m = features_mall.shape[-1]
-            features_mall = features_mall.astype(np.float32)
             columns = ['score_ft_mall_' + str(i) for i in range(m)]
-            features = pd.DataFrame(features_mall, columns=columns)
-            df_batch = pd.concat([df_batch, features], axis=1)
+            df_batch[columns] = features_mall
 
             df_good.append(df_batch)
 

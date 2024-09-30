@@ -159,7 +159,7 @@ def load_ms(ws):
 
 
 class Tims():
-    @profile
+    # @profile
     def __init__(self, dir_d):
         logger.info('Loading .d data...')
         self.dir_d = dir_d
@@ -254,8 +254,8 @@ class Tims():
         x = self.df_settings[['quad_low_mz_values', 'quad_high_mz_values']]
         x = x.drop_duplicates()
         x = x.sort_values(by='quad_low_mz_values')
-        low = x['quad_low_mz_values'].to_numpy()
-        high = x['quad_high_mz_values'].to_numpy()
+        low = x['quad_low_mz_values'].values
+        high = x['quad_high_mz_values'].values
         # assert (low[1:] == high[0:-1]).all(), 'dia swath exists ' \
         #                                       'overlap between ' \
         #                                       'windows!'
@@ -268,7 +268,7 @@ class Tims():
         idx = df.sort_values(by=['mz', 'im'], ascending=[True, False]).index
         return idx.values
 
-    @profile
+    # @profile
     def extract_swath_map(self, window_id):
         '''
         window_id: 0 is MS1
@@ -283,7 +283,7 @@ class Tims():
         ms1_idx_v = np.where(msms_type == 0)[0]
 
         # frame_len, height, tof
-        frame_lens = self.bruker.frames.NumPeaks.to_numpy()
+        frame_lens = self.bruker.frames.NumPeaks.values
         all_height = self.bruker.intensity_values # uint16
         all_tof = self.bruker.tof_indices # uint32
 
@@ -416,7 +416,7 @@ class Tims():
 
         return result
 
-    @profile
+    # @profile
     def split_ms1_to_chunks(self, ms1_map):
         '''
         MS1 can split by swath_id to save memory.

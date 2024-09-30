@@ -118,11 +118,12 @@ def gpu_sa_gausion_core(block_num, xics, scores, window_points, valids_num):
             scores[k, xic_idx, blockdim * mean_cols + tx] = score
 
 
+@profile
 def cal_coelution_by_gaussion(xics, window_points, valids_num):
     '''
     Coelution scores by sliding windows methods
     '''
-    valids_num = torch.tensor(valids_num, device=param_g.gpu_id)
+    valids_num = torch.from_numpy(valids_num).to(param_g.gpu_id)
 
     # block -- profile
     block_num = xics.shape[0] * xics.shape[1]
@@ -365,8 +366,6 @@ def extract_xics(df,
     Returns:
         cycles_idx, rts, ims, mzs, xics
     '''
-    df_subset = df.copy()
-
     scan_rts = map_gpu_ms1['scan_rts']
     cycle_total = len(scan_rts)
     biggest_rt = scan_rts[-1]
@@ -374,7 +373,7 @@ def extract_xics(df,
     # rt_range -- cycle start
     cycle_time = np.mean(np.diff(scan_rts))
     if (rt_tolerance is None) and (cycle_num is None):  # all rt_range
-        idx_start_v = np.zeros(len(df_subset), dtype=np.int32)
+        idx_start_v = np.zeros(len(df), dtype=np.int32)
         cycle_num = cycle_total
         # cycle -- rt
         result_cycle_idx = np.broadcast_to(np.arange(cycle_total), (len(df), cycle_total))
@@ -383,8 +382,8 @@ def extract_xics(df,
         cycle_num = int(rt_tolerance * 2 / cycle_time)
         if cycle_num > cycle_total:
             cycle_num = cycle_total
-        df_subset['rt_range_low'] = df_subset['pred_rt'] - rt_tolerance
-        idx_start_v = df_subset['rt_range_low'].values / biggest_rt
+        rt_range_low = df['pred_rt'].values - rt_tolerance
+        idx_start_v = rt_range_low / biggest_rt
         idx_start_v = (idx_start_v * (len(scan_rts) - 1)).astype(np.int32)
         idx_start_v[idx_start_v < 0] = 0
         idx_start_max = cycle_total - cycle_num
@@ -395,7 +394,7 @@ def extract_xics(df,
         result_rts = scan_rts[cycle_idx]
     elif cycle_num is not None:
         cycle_total = len(map_gpu_ms1['scan_rts'])
-        idx_start_v = df_subset['locus'].values - int(cycle_num / 2)
+        idx_start_v = df['locus'].values - int(cycle_num / 2)
         idx_start_v[idx_start_v < 0] = 0
         idx_start_max = cycle_total - cycle_num
         idx_start_v[idx_start_v > idx_start_max] = idx_start_max
@@ -408,28 +407,34 @@ def extract_xics(df,
 
     # params
     if scope == 'center':
-        query_mz_ms1 = df_subset[['pr_mz', 'pr_mz']].to_numpy()
-        query_mz_ms2 = np.array(df_subset['fg_mz'].values.tolist())
+        query_mz_ms1 = df[['pr_mz', 'pr_mz']].values
+        fg_mz_cols = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+        query_mz_ms2 = df[fg_mz_cols].values
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif scope == 'big':
         ms1_cols = ['pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H',
                     'pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H']  # unfrag
-        ms1 = df[ms1_cols].to_numpy()
-        left = np.array(df['fg_mz_left'].values.tolist())
-        center = np.array(df['fg_mz'].values.tolist())
-        fg_1H = np.array(df['fg_mz_1H'].values.tolist())
-        fg_2H = np.array(df['fg_mz_2H'].values.tolist())
+        ms1 = df[ms1_cols].values
+        cols_left = ['fg_mz_left_' + str(i) for i in range(param_g.fg_num)]
+        left = df[cols_left].values
+        cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+        center = df[cols_center].values
+        cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
+        fg_1H = df[cols_1H].values
+        cols_2H = ['fg_mz_2H_' + str(i) for i in range(param_g.fg_num)]
+        fg_2H = df[cols_2H].values
         query_mz_m = np.concatenate([ms1, left, center, fg_1H, fg_2H], axis=1)
         ms1_ion_num = 4
     elif scope == 'top6':
-        query_mz_m = np.ascontiguousarray(np.array(df['fg_mz'].values.tolist())[:, :6])
+        cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+        query_mz_m = np.ascontiguousarray(df[cols_center].values[:, :6])
         ms1_ion_num = 0
 
     if by_pred:
-        query_im_v = df_subset['pred_im'].to_numpy()
+        query_im_v = df['pred_im'].values
     else:
-        query_im_v = df_subset['measure_im'].to_numpy()
+        query_im_v = df['measure_im'].values
 
     # GPU
     ions_num = query_mz_m.shape[1]
@@ -438,20 +443,20 @@ def extract_xics(df,
         result_mz = cuda.device_array((1, 1, 1), dtype=np.float32)
     else:
         result_im = cuda.device_array(
-            (len(df_subset), ions_num, cycle_num), dtype=np.float32
+            (len(df), ions_num, cycle_num), dtype=np.float32
         )
         result_mz = cuda.device_array(
-            (len(df_subset), ions_num, cycle_num), dtype=np.float32
+            (len(df), ions_num, cycle_num), dtype=np.float32
         )
     result_xic = cuda.device_array(
-        (len(df_subset), ions_num, cycle_num), dtype=np.float32
+        (len(df), ions_num, cycle_num), dtype=np.float32
     )
     idx_start_v = cuda.to_device(idx_start_v)
     query_mz_m = cuda.to_device(query_mz_m)
     query_im_v = cuda.to_device(query_im_v)
 
     # kernel func, each thread is for a profile of an ion
-    k = df_subset.shape[0]
+    k = df.shape[0]
     n = k * ions_num
     threads_per_block = 512
     blocks_per_grid = math.ceil(n / threads_per_block)
@@ -566,7 +571,7 @@ def screen_locus_by_sa(scores_sa, top_sa_cut):
 
 
 @profile
-def screen_locus_by_deep(df_batch, top_deep_q):
+def screen_locus_by_deep(df_batch, locus_num, top_deep_q):
     '''
     Screen locuses of a pr by deep scores.
     Args:
@@ -576,20 +581,16 @@ def screen_locus_by_deep(df_batch, top_deep_q):
     Returns:
         df_batch: less rows
     '''
-    group_size = df_batch.groupby('pr_id', sort=False).size()
-    group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
-    group_rank = utils.cal_group_rank(
+    group_size_cumsum = np.concatenate([[0], np.cumsum(locus_num)])
+    group_rank_deep = utils.cal_group_rank(
+        df_batch['seek_score_deep'].values.astype(np.float32), group_size_cumsum
+    )
+    group_rank_x = utils.cal_group_rank(
         df_batch['seek_score_sa_x_deep'].values, group_size_cumsum
     )
-    df_batch['group_rank'] = group_rank
-
-    group_max = df_batch.groupby('pr_id')['seek_score_sa_x_deep'].transform(
-        'max')
-    ratios = df_batch['seek_score_sa_x_deep'] / group_max
-    df_batch = df_batch[(ratios > top_deep_q)]
-
-    df_batch = df_batch.reset_index(drop=True)
-
+    df_batch['group_rank'] = group_rank_x
+    idx = (group_rank_deep == 1) | (group_rank_x == 1)
+    df_batch = df_batch[idx].reset_index(drop=True)
     return df_batch
 
 

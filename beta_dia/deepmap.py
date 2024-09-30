@@ -34,7 +34,7 @@ def load_model_big(dir_model, channels):
     model = models.DeepMap(channels)
     device = param_g.gpu_id
     if dir_model is None:
-        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepbig.pt'
+        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepbig_ys.pt'
         model.load_state_dict(torch.load(pt_path, map_location=device))
     else:
         model.load_state_dict(torch.load(dir_model, map_location=device))
@@ -47,7 +47,7 @@ def load_model_center(dir_model, channels):
     model = models.DeepMap(channels)
     device = param_g.gpu_id
     if dir_model is None:
-        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepcenter.pt'
+        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepcenter_ys.pt'
         model.load_state_dict(torch.load(pt_path, map_location=device))
     else:
         model.load_state_dict(torch.load(dir_model, map_location=device))
@@ -304,39 +304,46 @@ def extract_maps(df_batch,
 
     # params
     if neutron_num == -1:
-        query_mz_ms1 = df_batch[['pr_mz_left', 'pr_mz_left']].to_numpy()
+        query_mz_ms1 = df_batch[['pr_mz_left', 'pr_mz_left']].values
         query_mz_ms2 = np.array(df_batch['fg_mz_left'].values.tolist())
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 0:
-        query_mz_ms1 = df_batch[['pr_mz', 'pr_mz']].to_numpy()
-        query_mz_ms2 = np.array(df_batch['fg_mz'].values.tolist())
+        query_mz_ms1 = df_batch[['pr_mz', 'pr_mz']].values
+        cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+        query_mz_ms2 = df_batch[cols_center].values
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 1:
-        query_mz_ms1 = df_batch[['pr_mz_1H', 'pr_mz_1H']].to_numpy()
-        query_mz_ms2 = np.array(df_batch['fg_mz_1H'].values.tolist())
+        query_mz_ms1 = df_batch[['pr_mz_1H', 'pr_mz_1H']].values
+        cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
+        query_mz_ms2 = df_batch[cols_1H].values
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 2:
-        query_mz_ms1 = df_batch[['pr_mz_2H', 'pr_mz_2H']].to_numpy()
-        query_mz_ms2 = np.array(df_batch['fg_mz_2H'].values.tolist())
+        query_mz_ms1 = df_batch[['pr_mz_2H', 'pr_mz_2H']].values
+        cols_2H = ['fg_mz_2H_' + str(i) for i in range(param_g.fg_num)]
+        query_mz_ms2 = df_batch[cols_2H].values
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num > 2:  # total
         ms1_cols = ['pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H',
                     'pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H'] # unfrag
-        ms1 = df_batch[ms1_cols].to_numpy()
-        left = np.array(df_batch['fg_mz_left'].values.tolist())
-        center = np.array(df_batch['fg_mz'].values.tolist())
-        fg_1H = np.array(df_batch['fg_mz_1H'].values.tolist())
-        fg_2H = np.array(df_batch['fg_mz_2H'].values.tolist())
+        ms1 = df_batch[ms1_cols].values
+        cols_left = ['fg_mz_left_' + str(i) for i in range(param_g.fg_num)]
+        left = df_batch[cols_left].values
+        cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+        center = df_batch[cols_center].values
+        cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
+        fg_1H = df_batch[cols_1H].values
+        cols_2H = ['fg_mz_2H_' + str(i) for i in range(param_g.fg_num)]
+        fg_2H = df_batch[cols_2H].values
         query_mz_m = np.concatenate([ms1, left, center, fg_1H, fg_2H], axis=1)
         ms1_ion_num = 4
     else:
         assert 0 > 1, 'neutron_num has to be [-1, 1, 2, >2]'
 
-    query_im_v = df_batch['measure_im'].to_numpy()
+    query_im_v = df_batch['measure_im'].values
 
     # GPU
     idx_start = cuda.to_device(idx_start)
@@ -439,7 +446,7 @@ def scoring_maps(
         # valid ion nums
         non_fg_num = maps.shape[1] - param_g.fg_num
         valid_ion_nums = non_fg_num + df_batch['fg_num'].values
-        valid_ion_nums = torch.tensor(
+        valid_ion_nums = torch.from_numpy(
             np.repeat(valid_ion_nums, locus_num)).long().to(param_g.gpu_id)
         with torch.no_grad():
             with torch.cuda.amp.autocast():
@@ -507,15 +514,19 @@ def extract_scoring_big(
     # params
     ms1_cols = ['pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H',
                 'pr_mz_left', 'pr_mz', 'pr_mz_1H', 'pr_mz_2H']  # unfrag
-    ms1 = df_input[ms1_cols].to_numpy()
-    left = np.array(df_input['fg_mz_left'].values.tolist())
-    center = np.array(df_input['fg_mz'].values.tolist())
-    fg_1H = np.array(df_input['fg_mz_1H'].values.tolist())
-    fg_2H = np.array(df_input['fg_mz_2H'].values.tolist())
+    ms1 = df_input[ms1_cols].values
+    cols_left = ['fg_mz_left_' + str(i) for i in range(param_g.fg_num)]
+    left = df_input[cols_left].values
+    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+    center = df_input[cols_center].values
+    cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
+    fg_1H = df_input[cols_1H].values
+    cols_2H = ['fg_mz_2H_' + str(i) for i in range(param_g.fg_num)]
+    fg_2H = df_input[cols_2H].values
     query_mz_m = np.concatenate([ms1, left, center, fg_1H, fg_2H], axis=1)
     ms1_ion_num = 4
 
-    query_im_v = df_input['measure_im'].to_numpy()
+    query_im_v = df_input['measure_im'].values
 
     # cuda input
     idx_start_v = cuda.to_device(idx_start_v)
@@ -564,7 +575,7 @@ def extract_scoring_big(
             valid_ion_nums = 4 * (2 + df_input['fg_num'].values)
             model = model_big
         maps_sub = maps[:, idx]
-        valid_ion_nums = torch.tensor(valid_ion_nums).long().to(param_g.gpu_id)
+        valid_ion_nums = torch.from_numpy(valid_ion_nums).long().to(param_g.gpu_id)
         with torch.no_grad():
             with torch.cuda.amp.autocast():
                 feature, pred = model(maps_sub, valid_ion_nums)

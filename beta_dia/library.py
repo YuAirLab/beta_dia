@@ -297,9 +297,10 @@ def read_entry_worker(binary_data, block_positions, block_label, worker_i):
     fg_anno = np.ones(mask.shape, dtype=np.int16) * 3011  # 3 is fg_loss
     fg_anno[mask] = fg_anno_v
 
-    df['fg_mz'] = list(fg_mz)
-    df['fg_height'] = list(fg_height)
-    df['fg_anno'] = list(fg_anno)
+    fg_num = fg_mz.shape[1]
+    df[['fg_mz_' + str(i) for i in range(fg_num)]] = fg_mz
+    df[['fg_height_' + str(i) for i in range(fg_num)]] = fg_height
+    df[['fg_anno_' + str(i) for i in range(fg_num)]] = fg_anno
 
     # pr_id -- string
     df['pr_id'] = df['pr_id'].str.decode('utf-8')

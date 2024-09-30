@@ -264,21 +264,28 @@ def filter_by_q_cut(df, q_cut):
 
 
 @profile
-def cal_q_pr_first(df_input, batch_size, n_model, model_trained=None):
-    df = df_input.copy()
-
+def cal_q_pr_first(df, batch_size, n_model, model_trained=None, scaler=None):
     col_idx = df.columns.str.startswith('score_')
     logger.info('cols num: {}'.format(sum(col_idx)))
 
-    X = df.loc[:, col_idx].to_numpy()
+    X = df.loc[:, col_idx].values
     assert X.dtype == np.float32
-    y = 1 - df['decoy'].to_numpy()  # targets is positives
-    X = preprocessing.scale(X)  # no scale to Tree models
+    y = 1 - df['decoy'].values  # targets is positives
+    if scaler is None:
+        scaler = preprocessing.StandardScaler()
+        X = scaler.fit_transform(X) # no scale to Tree models
+    else:
+        X = scaler.transform(X)
 
     # train on group_rank == 1
-    train_idx = df.group_rank == 1
-    X_train = X[train_idx]
-    y_train = y[train_idx]
+    group_rank_max = df['group_rank'].max()
+    if group_rank_max > 1:
+        train_idx = df['group_rank'] == 1
+        X_train = X[train_idx]
+        y_train = y[train_idx]
+    else:
+        X_train = X
+        y_train = y
     n_pos, n_neg = sum(y_train == 1), sum(y_train == 0)
     info = 'Training the model: {} pos, {} neg'.format(n_pos, n_neg)
     logger.info(info)
@@ -306,30 +313,28 @@ def cal_q_pr_first(df_input, batch_size, n_model, model_trained=None):
 
     df['cscore_pr'] = cscore
 
-    if df.group_rank.max() > 1:
+    if group_rank_max > 1:
         group_size = df.groupby('pr_id', sort=False).size()
         group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
         group_rank = utils.cal_group_rank(df.cscore_pr.values, group_size_cumsum)
         df['group_rank'] = group_rank
+        df = df[df['group_rank'] == 1].reset_index(drop=True)
 
-    df_top = df[df['group_rank'] == 1].reset_index(drop=True)
-    df_top = cal_q_pr_core(df_top, score_col='cscore_pr')
-    return df_top, model
+    df = cal_q_pr_core(df, score_col='cscore_pr')
+
+    return df, model, scaler
 
 
 def cal_q_pr_second(df_input, batch_size, n_model):
     col_idx = df_input.columns.str.startswith('score_')
     logger.info('cols num: {}'.format(sum(col_idx)))
 
-    X = df_input.loc[:, col_idx].to_numpy()
-    assert X.dtype == np.float32
-    y = 1 - df_input['decoy'].to_numpy()
-    X = preprocessing.scale(X)
+    X_train = df_input.loc[:, col_idx].values
+    assert X_train.dtype == np.float32
+    y_train = 1 - df_input['decoy'].values
+    X_train = preprocessing.scale(X_train)
 
     # training on group_rank == 1
-    train_idx = df_input.group_rank == 1
-    X_train = X[train_idx]
-    y_train = y[train_idx]
     n_pos, n_neg = sum(y_train == 1), sum(y_train == 0)
     info = 'Training the model: {} pos, {} neg'.format(n_pos, n_neg)
     logger.info(info)
@@ -355,20 +360,12 @@ def cal_q_pr_second(df_input, batch_size, n_model):
                              voting='soft',
                              n_jobs=1 if __debug__ else 12)
     model.fit(X_train, y_train)
-    cscore = model.predict_proba(X)[:, 1]
+    cscore = model.predict_proba(X_train)[:, 1]
 
     df_input['cscore_pr'] = cscore
+    df_input = cal_q_pr_core(df_input, score_col='cscore_pr')
 
-    if df_input['group_rank'].max() > 1:
-        group_size = df_input.groupby('pr_id', sort=False).size()
-        group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
-        group_rank = utils.cal_group_rank(df_input.cscore_pr.values, group_size_cumsum)
-        df_input['group_rank'] = group_rank
-
-    df_top = df_input[df_input['group_rank'] == 1].reset_index(drop=True)
-    df_top = cal_q_pr_core(df_top, score_col='cscore_pr')
-
-    return df_top
+    return df_input
 
 
 def cal_q_pro_pg(df_top, q_pr_cut):

@@ -16,6 +16,7 @@ from numba import cuda, jit, prange
 
 from beta_dia import param_g
 from beta_dia.log import Logger
+from beta_dia import __version__
 
 # from xgboost.sklearn import XGBClassifier
 
@@ -211,7 +212,7 @@ def cal_group_rank(x, group_size_cumsum):
         start = group_size_cumsum[i]
         end = group_size_cumsum[i + 1]
         xx = x[start: end]
-        rank[start : end] = end - start - np.argsort(xx)
+        rank[start : end] = np.argsort(np.argsort(-xx)) + 1
     return rank
 
 
@@ -267,8 +268,7 @@ def convert_cols_to_diann(df):
 
 
 def get_args():
-    import beta_dia
-    name = f"Beta-DIA {beta_dia.__version__}"
+    name = f"Beta-DIA {__version__}"
     print(' ' * 9, "*" * (len(name) + 4))
     print(' ' * 9, f"* {name} *")
     print(' ' * 9, "*" * (len(name) + 4))
@@ -357,6 +357,7 @@ def init_single_ws(ws_i, total, ws, out_name, dir_lib, entry_num):
     param_g.dir_out.mkdir(exist_ok=True)
     Logger.set_logger(param_g.dir_out, is_time_name=param_g.is_time_log)
     logger.info(f'====================={ws_i+1}/{total}=====================')
+    logger.info(f'Beta-DIA v{__version__}')
     logger.info('.d: ' + str(ws.name))
     logger.info('Lib: ' + Path(dir_lib).name)
     logger.info(f'Lib prs: {entry_num}')

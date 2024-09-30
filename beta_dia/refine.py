@@ -208,7 +208,7 @@ def make_dataset_mall(malls, valid_num, labels, train_ratio=0.9):
 def my_collate(items):
     maps, valid_nums, labels = zip(*items)
 
-    xic = torch.tensor(np.array(maps))
+    xic = torch.from_numpy(np.array(maps))
     xic_num = torch.tensor(valid_nums)
     label = torch.tensor(labels)
 

@@ -3,6 +3,7 @@ import pandas as pd
 from numba import jit
 
 from beta_dia.log import Logger
+from beta_dia import param_g
 
 logger = Logger.get_logger()
 
@@ -104,7 +105,8 @@ def polish_after_qvalue(df, tol_locus, tol_im, tol_ppm, tol_share_num):
     swath_id_v = df_target['swath_id'].values
     measure_locus_v = df_target['locus'].values
     measure_im_v = df_target['measure_im'].values
-    fg_mz_m = np.array(df_target['fg_mz'].values.tolist())
+    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+    fg_mz_m = df_target[cols_center].values
     cscore_v = df_target['cscore_pr'].values
 
     is_fg_share_m = np.zeros((len(swath_id_v), fg_mz_m.shape[-1]), dtype=bool)
@@ -185,13 +187,22 @@ def polish_prs_core(swath_id_v, measure_locus_v, measure_im_v,
                 is_dubious_v[j] = True
 
 
-def polish_prs(df, tol_locus, tol_im, tol_ppm, tol_share_num):
-    logger.info('Polishing dubious prs with share fragment ions...')
+def polish_prs(df, tol_im, tol_ppm, tol_share_num):
+    '''
+    1. Co-fragmentation prs should be polished.
+    2. Decoy prs with cscore less than min(target) should be removed.
+    '''
+    logger.info('Polishing dubious target prs and low confidence decoy prs...')
 
     assert df['group_rank'].max() == 1
 
     df_target = df[df['decoy'] == 0]
     df_decoy = df[df['decoy'] == 1]
+
+    # tol_locus is from the half of span
+    spans = df_target.loc[df_target['q_pr'] < 0.01, 'score_elute_span']
+    tol_locus = np.ceil(0.5 * spans.median())
+    logger.info(f'Span median is: {spans.median()}, tol_locus is: {tol_locus}')
 
     df_target = df_target.sort_values(
         by=['swath_id', 'cscore_pr'],
@@ -202,7 +213,8 @@ def polish_prs(df, tol_locus, tol_im, tol_ppm, tol_share_num):
     swath_id_v = df_target['swath_id'].values
     measure_locus_v = df_target['locus'].values
     measure_im_v = df_target['measure_im'].values
-    fg_mz_m = np.array(df_target['fg_mz'].values.tolist())
+    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+    fg_mz_m = np.ascontiguousarray(df_target[cols_center].values)
 
     is_dubious_v = np.zeros_like(swath_id_v, dtype=bool)
 
@@ -214,10 +226,17 @@ def polish_prs(df, tol_locus, tol_im, tol_ppm, tol_share_num):
 
     target_num_before = len(df_target)
     df_target = df_target[~is_dubious_v]
-    df = pd.concat([df_target, df_decoy], ignore_index=True)
 
-    info = 'Remove dubious prs: {} from: {} targets.'.format(
-        sum(is_dubious_v), target_num_before
+    # removing low confidence decoy prs
+    cut = df_target['cscore_pr'].min()
+    bad_decoys_num = (df_decoy['cscore_pr'] < cut).sum()
+    decoy_num_before = len(df_decoy)
+    df_decoy = df_decoy[df_decoy['cscore_pr'] > cut]
+
+    # result
+    df = pd.concat([df_target, df_decoy], ignore_index=True)
+    info = 'Remove dubious target prs: {}/{}, bad decoys prs: {}/{}'.format(
+        sum(is_dubious_v), target_num_before, bad_decoys_num, decoy_num_before
     )
     logger.info(info)
 

@@ -66,7 +66,8 @@ def extract_mall(
     # ppm
     mzs = mzs.permute((0, 2, 1))
     mzs = mzs[:, (center_idx - 1) : (center_idx + 2), :]
-    pred_mzs = np.array(df_batch['fg_mz'].values.tolist())
+    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+    pred_mzs = df_batch[cols_center].values
     pred_mzs = torch.from_numpy(pred_mzs).to(param_g.gpu_id)
     pred_mzs = pred_mzs.unsqueeze(1).expand(mzs.shape)
     ppms = 1e6 * (pred_mzs - mzs) / (pred_mzs + 1e-7)
@@ -93,12 +94,14 @@ def extract_mall(
     areas = areas.unsqueeze(1)
 
     # pred intensities
-    pred_heights = np.array(df_batch['fg_height'].values.tolist())
+    cols_height = ['fg_height_' + str(i) for i in range(param_g.fg_num)]
+    pred_heights = df_batch[cols_height].values
     pred_heights = torch.from_numpy(pred_heights).to(param_g.gpu_id)
     pred_heights = pred_heights.unsqueeze(1)
 
     # ion type
-    fg_type = np.array(df_batch['fg_anno'].values.tolist()) // 1000
+    cols_anno = ['fg_anno_' + str(i) for i in range(param_g.fg_num)]
+    fg_type = df_batch[cols_anno].values // 1000
     fg_type = torch.from_numpy(fg_type.astype(np.float32)).to(param_g.gpu_id)
     fg_type = fg_type.unsqueeze(1)
 
@@ -146,7 +149,7 @@ def scoring_mall(
                         tol_im,
                         tol_ppm)
     valid_ion_nums = df_input['fg_num'].values
-    valid_ion_nums = torch.tensor(valid_ion_nums).long().to(param_g.gpu_id)
+    valid_ion_nums = torch.from_numpy(valid_ion_nums).long().to(param_g.gpu_id)
     with torch.no_grad():
         feature, pred = model_mall(mall, valid_ion_nums)
 

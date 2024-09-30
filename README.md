@@ -118,3 +118,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
   * FIX: polishing should be followed by qvalue calculation again. 
 #### 0.3.0
   * FEAT: refactor code to speed up
+#### 0.4.0
+  * FEAT: use model_ys; select locus with x == 1 or deep == 1

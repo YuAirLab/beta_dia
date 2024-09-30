@@ -81,25 +81,31 @@ def convert_seq_to_mass(simple_seq):
 
 def cal_fg_mz_iso(df):
     mass_neutron = 1.0033548378
-    fg_mz_m = np.vstack(df.fg_mz)
 
-    fg_anno_m = np.vstack(df['fg_anno'])
+    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+    fg_mz_m = df[cols_center].values
+
+    cols_anno = ['fg_anno_' + str(i) for i in range(param_g.fg_num)]
+    fg_anno_m = df[cols_anno].values
     fg_charge_m = fg_anno_m % 10
 
     fg_mz_left = (fg_mz_m * fg_charge_m - mass_neutron) / fg_charge_m
     fg_mz_left[fg_mz_m <= 0.] = 0.
     fg_mz_left = fg_mz_left.astype(np.float32)
-    df['fg_mz_left'] = list(fg_mz_left)
+    cols_left = ['fg_mz_left_' + str(i) for i in range(param_g.fg_num)]
+    df[cols_left] = fg_mz_left
 
     fg_mz_1H = (fg_mz_m * fg_charge_m + mass_neutron) / fg_charge_m
     fg_mz_1H[fg_mz_m <= 0.] = 0.
     fg_mz_1H = fg_mz_1H.astype(np.float32)
-    df['fg_mz_1H'] = list(fg_mz_1H)
+    cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
+    df[cols_1H] = fg_mz_1H
 
     fg_mz_2H = (fg_mz_m * fg_charge_m + 2 * mass_neutron) / fg_charge_m
     fg_mz_2H[fg_mz_m <= 0.] = 0.
     fg_mz_2H = fg_mz_2H.astype(np.float32)
-    df['fg_mz_2H'] = list(fg_mz_2H)
+    cols_2H = ['fg_mz_2H_' + str(i) for i in range(param_g.fg_num)]
+    df[cols_2H] = fg_mz_2H
 
     return df
 
@@ -173,8 +179,8 @@ def make_decoys(df_target, fg_num, method, value=1):
 
     for _, df_batch in df_decoy.groupby(df_decoy.index // 50000):
         # fg_anno: 2251 means y25_1
-        fg_anno = np.vstack(df_batch['fg_anno'])
-        fg_anno = fg_anno[:, :fg_num]
+        cols_anno = ['fg_anno_' + str(i) for i in range(fg_num)]
+        fg_anno = df_batch[cols_anno].values
         fg_type = (fg_anno // 1000).astype(np.int8)  # y-2, b-1, x-3
         fg_charge = (fg_anno % 10).astype(np.int8)
         fg_len = (fg_anno // 10 % 100).astype(np.int8)
@@ -204,5 +210,6 @@ def make_decoys(df_target, fg_num, method, value=1):
         cuda.synchronize()
         fg_mz_v.append(result_fg_mz.copy_to_host())
     fg_mz_v = np.vstack(fg_mz_v)
-    df_decoy['fg_mz'] = list(fg_mz_v)
+    cols_center = ['fg_mz_' + str(i) for i in range(fg_mz_v.shape[1])]
+    df_decoy[cols_center] = fg_mz_v
     return df_decoy
