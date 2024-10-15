@@ -274,6 +274,8 @@ def read_entry_worker(binary_data, block_positions, block_label, worker_i):
                        'fg_num': fg_num_v,
                        })
     assert sum(fg_loss_v) == 0, 'DIA-NN .speclib has fg_loss type!'
+    assert len(df) == len(df.drop_duplicates(['pr_id', 'pr_index']))
+    assert len(df) == df['pr_id'].nunique() == df['pr_index'].nunique()
 
     # unify to top-12，fg_anno code：y15_2 --> 2152
     fg_mz_v = np.array(fg_mz_v, dtype=np.float32)

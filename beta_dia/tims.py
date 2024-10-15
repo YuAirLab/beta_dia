@@ -16,6 +16,24 @@ except:
 
 logger = Logger.get_logger()
 
+@jit(nopython=True, nogil=True)
+def numba_index_by_bool(idx, ims, mzs, heights):
+    result_len = np.sum(idx)
+    result_ims = np.empty(result_len, dtype=ims.dtype)
+    result_mzs = np.empty(result_len, dtype=mzs.dtype)
+    result_heights = np.empty(result_len, dtype=heights.dtype)
+    # idx_cumsum = np.cumsum(idx)
+    write_idx = 0
+    for i in range(len(idx)):
+        if idx[i]:
+            # write_idx = idx_cumsum[i] - 1
+            result_ims[write_idx] = ims[i]
+            result_mzs[write_idx] = mzs[i]
+            result_heights[write_idx] = heights[i]
+            write_idx += 1
+    return result_ims, result_mzs, result_heights
+
+
 @jit(nopython=True, nogil=True, parallel=True)
 def numba_paral_repeat(x, y):
     result = np.empty(y[-1], dtype=x.dtype)
@@ -159,7 +177,7 @@ def load_ms(ws):
 
 
 class Tims():
-    # @profile
+    @profile
     def __init__(self, dir_d):
         logger.info('Loading .d data...')
         self.dir_d = dir_d
@@ -268,7 +286,7 @@ class Tims():
         idx = df.sort_values(by=['mz', 'im'], ascending=[True, False]).index
         return idx.values
 
-    # @profile
+    @profile
     def extract_swath_map(self, window_id):
         '''
         window_id: 0 is MS1
@@ -301,22 +319,24 @@ class Tims():
         quad_center_values = self.bruker.quad_mz_values.mean(axis=1)
         quad_window_ids = np.digitize(quad_center_values, swath)
         quad_window_ids = quad_window_ids.astype(np.uint8)
-        all_id = numba_paral_repeat(quad_window_ids, self.bruker.quad_indptr)
 
         # by swath_id
-        select_id = all_id == window_id
+        select_id = quad_window_ids == window_id
+        select_id = numba_paral_repeat(select_id, self.bruker.quad_indptr)
+
         frame_len_cumsum = np.cumsum(frame_lens)
         frame_valid_lens = numba_paral_sum(select_id, frame_len_cumsum)
 
         before_num = frame_lens[:frame_start].sum()
         end_num = frame_lens[frame_end:].sum()
         select_id[0:before_num] = False
-        select_id[-end_num:] = False
+        if end_num > 0:
+            select_id[-end_num:] = False
         frame_valid_lens = frame_valid_lens[frame_start: frame_end]
 
-        all_height = all_height[select_id]
-        all_tof = all_tof[select_id]
-        all_push = all_push[select_id]
+        all_push, all_tof, all_height = numba_index_by_bool(
+            select_id, all_push, all_tof, all_height
+        )
 
         assert len(all_rt) == len(frame_valid_lens)
         assert (len(all_push) == len(all_tof) ==
@@ -346,9 +366,9 @@ class Tims():
         cycle_valid_lens2 = np.array(list(map(np.count_nonzero, tmp)))
 
         select_id = all_height2 > 0
-        all_tof2 = all_tof[select_id].copy()
-        all_push2 = all_push[select_id].copy()
-        all_height2 = all_height2[select_id]
+        all_push2, all_tof2, all_height2 = numba_index_by_bool(
+            select_id, all_push, all_tof, all_height2
+        )
         assert len(all_tof2) == sum(cycle_valid_lens2)
 
         # push -- im，tof -- m/z
@@ -372,6 +392,7 @@ class Tims():
         ) = self.d_ms1_maps[1]
         return (all_rt.min(), all_rt.max())
 
+    @profile
     def copy_map_to_gpu(self, swath_id, centroid):
         result = []
         for map_type in ['ms1', 'ms2']:
@@ -416,7 +437,7 @@ class Tims():
 
         return result
 
-    # @profile
+    @profile
     def split_ms1_to_chunks(self, ms1_map):
         '''
         MS1 can split by swath_id to save memory.
@@ -452,9 +473,9 @@ class Tims():
                 good_idx = (scan_mz >= pr_mz_low) & (scan_mz <= pr_mz_high)
                 good_num = good_idx.sum()
                 if good_num:
-                    local_mz = scan_mz[good_idx]
-                    local_height = scan_height[good_idx]
-                    local_im = scan_im[good_idx]
+                    local_im, local_mz, local_height = numba_index_by_bool(
+                        good_idx, scan_im, scan_mz, scan_height
+                    )
                 else:
                     local_mz = np.array([10.], dtype=np.float32)
                     local_height = np.array([1], dtype=np.uint16)
@@ -473,9 +494,9 @@ class Tims():
                 good_idx = (scan_mz2 >= pr_mz_low) & (scan_mz2 <= pr_mz_high)
                 good_num = good_idx.sum()
                 if good_num:
-                    local_mz2 = scan_mz2[good_idx]
-                    local_height2 = scan_height2[good_idx]
-                    local_im2 = scan_im2[good_idx]
+                    local_im2, local_mz2, local_height2 = numba_index_by_bool(
+                        good_idx, scan_im2, scan_mz2, scan_height2
+                    )
                 else:
                     local_mz2 = np.array([10.], dtype=np.float32)
                     local_height2 = np.array([1], dtype=np.uint32)

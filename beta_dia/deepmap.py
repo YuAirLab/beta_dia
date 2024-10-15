@@ -304,24 +304,28 @@ def extract_maps(df_batch,
 
     # params
     if neutron_num == -1:
-        query_mz_ms1 = df_batch[['pr_mz_left', 'pr_mz_left']].values
+        query_mz_ms1 = df_batch['pr_mz_left'].values
+        query_mz_ms1 = np.tile(query_mz_ms1, (2, 1)).T
         query_mz_ms2 = np.array(df_batch['fg_mz_left'].values.tolist())
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 0:
-        query_mz_ms1 = df_batch[['pr_mz', 'pr_mz']].values
+        query_mz_ms1 = df_batch['pr_mz'].values
+        query_mz_ms1 = np.tile(query_mz_ms1, (2, 1)).T
         cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
         query_mz_ms2 = df_batch[cols_center].values
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 1:
-        query_mz_ms1 = df_batch[['pr_mz_1H', 'pr_mz_1H']].values
+        query_mz_ms1 = df_batch['pr_mz_1H'].values
+        query_mz_ms1 = np.tile(query_mz_ms1, (2, 1)).T
         cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
         query_mz_ms2 = df_batch[cols_1H].values
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
         ms1_ion_num = 1
     elif neutron_num == 2:
-        query_mz_ms1 = df_batch[['pr_mz_2H', 'pr_mz_2H']].values
+        query_mz_ms1 = df_batch['pr_mz_2H'].values
+        query_mz_ms1 = np.tile(query_mz_ms1, (2, 1)).T
         cols_2H = ['fg_mz_2H_' + str(i) for i in range(param_g.fg_num)]
         query_mz_ms2 = df_batch[cols_2H].values
         query_mz_m = np.concatenate([query_mz_ms1, query_mz_ms2], axis=1)
@@ -463,7 +467,7 @@ def scoring_maps(
             feature = feature.numpy()
             feature_v.append(feature)
 
-    pred = torch.cat(pred_v)
+    pred = torch.cat(pred_v).to(dtype=torch.float32) # torch autocast to 16
     if return_feature:
         feature = np.vstack(feature_v)
     else:
@@ -579,8 +583,9 @@ def extract_scoring_big(
         with torch.no_grad():
             with torch.cuda.amp.autocast():
                 feature, pred = model(maps_sub, valid_ion_nums)
+        torch.cuda.synchronize()
         pred = torch.softmax(pred, 1)
-        pred = pred[:, 1].cpu().numpy()
+        pred = pred[:, 1].cpu().numpy().astype(np.float32)
         feature = feature.cpu().numpy()
         pred_v.append(pred)
         feature_v.append(feature)

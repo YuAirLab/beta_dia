@@ -172,8 +172,7 @@ def quant_pr(df, ms):
 
             df_good.append(df_batch)
 
-        utils.release_gpu_scans(ms1_centroid)
-        utils.release_gpu_scans(ms2_centroid)
+        utils.release_gpu_scans(ms1_centroid, ms2_centroid)
 
     df = pd.concat(df_good, axis=0, ignore_index=True)
 

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import torch
-from numba import cuda
+from numba import cuda, jit
 
 from beta_dia import deepmall
 from beta_dia import deepmap
@@ -34,6 +34,7 @@ def score_locus(df_target, ms, model_center, model_big):
 
         batch_n = param_g.batch_deep_big
 
+        # may split two locus that belong to a pr
         for batch_idx, df_batch in df_swath.groupby(df_swath.index // batch_n):
             df_batch = df_batch.reset_index(drop=True)
             # deep scores and deep features
@@ -97,18 +98,17 @@ def score_locus(df_target, ms, model_center, model_big):
             df_batch = scoring_center_im(df_batch, ims_v[1])
             # mz
             df_batch = scoring_center_mz(df_batch, mzs_v[1])
-            # competitive
-            df_batch = scoring_putatives(df_batch)
             # cross scores
             df_batch = scoring_by_cross(df_batch)
 
             df_good.append(df_batch)
-        utils.release_gpu_scans(ms1_profile)
-        utils.release_gpu_scans(ms2_profile)
-        utils.release_gpu_scans(ms1_centroid)
-        utils.release_gpu_scans(ms2_centroid)
+
+        utils.release_gpu_scans(
+            ms1_profile, ms2_profile, ms1_centroid, ms2_centroid
+        )
 
     df = pd.concat(df_good, axis=0, ignore_index=True)
+    df = scoring_putatives(df) # competitive for two locus from a pr
     df = scoring_meta(df) # meta scores
     return df
 
@@ -131,12 +131,12 @@ def scoring_by_deep(df_batch, scores_deep_v, x):
 @profile
 def scoring_by_ft(df_batch, features_deep_v, x):
     # x: ['pre', 'refine_p1', 'refine_p2']
-    features = [x for x in features_deep_v if x is not None]
-    features = np.concatenate(features, axis=1)
-
-    m = features.shape[-1]
-    columns = [f'score_ft_deep_{x}_{i}' for i in range(m)]
-    df_batch[columns] = features
+    owned = 0
+    for features in features_deep_v:
+        m = features.shape[-1]
+        columns = [f'score_ft_deep_{x}_{i}' for i in range(owned, owned + m)]
+        df_batch[columns] = features
+        owned += m
 
     return df_batch
 
@@ -511,27 +511,91 @@ def scoring_meta(df):
     return df
 
 
-def scoring_putatives(df_batch):
+@jit(nopython=True, nogil=True)
+def numba_scoring_putatives(groups, sa_v, center_v, big_v):
+    result_sa_max = np.empty(len(groups), dtype=sa_v.dtype)
+    result_sa_sum = np.empty(len(groups), dtype=sa_v.dtype)
+    result_center_max = np.empty(len(groups), dtype=sa_v.dtype)
+    result_center_sum = np.empty(len(groups), dtype=sa_v.dtype)
+    result_big_max = np.empty(len(groups), dtype=sa_v.dtype)
+    result_big_sum = np.empty(len(groups), dtype=sa_v.dtype)
+
+    current_group = groups[0]
+    sa_max = sa_v[0]
+    sa_sum = sa_v[0]
+    center_max = center_v[0]
+    center_sum = center_v[0]
+    big_max = big_v[0]
+    big_sum = big_v[0]
+
+    start_idx = 0
+
+    for i in range(1, len(groups)):
+        if groups[i] != current_group:
+            for j in range(start_idx, i):
+                result_sa_max[j] = sa_max
+                result_center_max[j] = center_max
+                result_big_max[j] = big_max
+                result_sa_sum[j] = sa_sum
+                result_center_sum[j] = center_sum
+                result_big_sum[j] = big_sum
+
+            current_group = groups[i]
+            sa_max = sa_v[i]
+            sa_sum = sa_v[i]
+            center_max = center_v[i]
+            center_sum = center_v[i]
+            big_max = big_v[i]
+            big_sum = big_v[i]
+            start_idx = i
+        else:
+            sa_max = max(sa_max, sa_v[i])
+            center_max = max(center_max, center_v[i])
+            big_max = max(big_max, big_v[i])
+
+            sa_sum += sa_v[i]
+            center_sum += center_v[i]
+            big_sum += big_v[i]
+
+    for j in range(start_idx, len(groups)):
+        result_sa_max[j] = sa_max
+        result_center_max[j] = center_max
+        result_big_max[j] = big_max
+        result_sa_sum[j] = sa_sum
+        result_center_sum[j] = center_sum
+        result_big_sum[j] = big_sum
+
+    return (result_sa_max, result_center_max, result_big_max,
+            result_sa_sum, result_center_sum, result_big_sum)
+
+
+@profile
+def scoring_putatives(df):
     '''
     If a pr has multiple candidate elution groups, calculate they bias:
         1) score-i - score-max
         2) np.log(score-i/score.sum)
     '''
-    for col in ['score_center_coelution',
-                'score_center_deep_pre',
-                'score_big_deep_pre']:
+    a = 1e-7
 
-        scores1 = df_batch[col]
+    pr_index_v = df['pr_index'].values
+    sa_v = df['score_center_coelution'].values
+    center_v = df['score_center_deep_pre'].values
+    big_v = df['score_big_deep_pre'].values
+    (sa_max_v, center_max_v, big_max_v,
+     sa_sum_v, center_sum_v, big_sum_v) = numba_scoring_putatives(
+        pr_index_v, sa_v, center_v, big_v
+    )
+    df['score_center_coelution_putative1'] = sa_v - sa_max_v
+    df['score_center_coelution_putative2'] = np.log(sa_v + a) / (sa_sum_v + a)
 
-        group_max = df_batch.groupby('pr_id')[col].transform('max')
-        scores2 = scores1 - group_max
-        df_batch[col + '_putative1'] = scores2
+    df['score_center_deep_pre_putative1'] = center_v - center_max_v
+    df['score_center_deep_pre_putative2'] = np.log(center_v + a) / (center_sum_v + a)
 
-        group_sum = df_batch.groupby('pr_id')[col].transform('sum')
-        scores2 = np.log((scores1 + 1e-7) / (group_sum + 1e-7))
-        df_batch[col + '_putative2'] = scores2
+    df['score_big_deep_pre_putative1'] = big_v - big_max_v
+    df['score_big_deep_pre_putative2'] = np.log(big_v + a) / (big_sum_v + a)
 
-    return df_batch
+    return df
 
 
 def scoring_by_cross(df_batch, is_update=False):
@@ -637,10 +701,9 @@ def update_scores(df, ms, model_center, model_big, model_mall):
 
             df_good.append(df_batch)
 
-        utils.release_gpu_scans(ms1_profile)
-        utils.release_gpu_scans(ms2_profile)
-        utils.release_gpu_scans(ms1_centroid)
-        utils.release_gpu_scans(ms2_centroid)
+        utils.release_gpu_scans(
+            ms1_profile, ms2_profile, ms1_centroid, ms2_centroid
+        )
 
     df = pd.concat(df_good, axis=0, ignore_index=True)
     utils.cal_acc_recall(param_g.ws, df[df['decoy'] == 0], diann_q_pr=0.01)

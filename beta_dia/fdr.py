@@ -277,22 +277,27 @@ def cal_q_pr_first(df, batch_size, n_model, model_trained=None, scaler=None):
     else:
         X = scaler.transform(X)
 
-    # train on group_rank == 1
+    # train
     group_rank_max = df['group_rank'].max()
-    if group_rank_max > 1:
-        train_idx = df['group_rank'] == 1
+    if (model_trained is None) and (group_rank_max > 1):
+        decoy_deeps = df.loc[df['decoy'] == 1, 'score_big_deep_pre'].values
+        decoy_m, decoy_u = np.mean(decoy_deeps), np.std(decoy_deeps)
+        good_cut = decoy_m + 3 * decoy_u
+        logger.info(f'Training with good_big_score: {good_cut:.2f}')
+        train_idx = (df['group_rank'] == 1) & (df['score_big_deep_pre'] > good_cut)
         X_train = X[train_idx]
         y_train = y[train_idx]
     else:
         X_train = X
         y_train = y
+
     n_pos, n_neg = sum(y_train == 1), sum(y_train == 0)
     info = 'Training the model: {} pos, {} neg'.format(n_pos, n_neg)
     logger.info(info)
 
     # models
     if model_trained is None:
-        param = (20, 10, 5)
+        param = (25, 20, 15, 10, 5)
         mlps = [MLPClassifier(max_iter=1,
                               shuffle=True,
                               random_state=i,  # init weights and shuffle
@@ -304,7 +309,7 @@ def cal_q_pr_first(df, batch_size, n_model, model_trained=None, scaler=None):
         names = [f'mlp{i}' for i in range(n_model)]
         model = VotingClassifier(estimators=list(zip(names, mlps)),
                                  voting='soft',
-                                 n_jobs=1 if __debug__ else 12)
+                                 n_jobs=1 if __debug__ else n_model)
         model.fit(X_train, y_train)
         cscore = model.predict_proba(X)[:, 1]
     else:
@@ -318,7 +323,7 @@ def cal_q_pr_first(df, batch_size, n_model, model_trained=None, scaler=None):
         group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
         group_rank = utils.cal_group_rank(df.cscore_pr.values, group_size_cumsum)
         df['group_rank'] = group_rank
-        df = df[df['group_rank'] == 1].reset_index(drop=True)
+        df = df.loc[group_rank == 1]
 
     df = cal_q_pr_core(df, score_col='cscore_pr')
 

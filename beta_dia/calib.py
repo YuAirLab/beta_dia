@@ -186,6 +186,7 @@ def update_info_im(df_tol, df_lib):
     return df_tol, df_lib
 
 
+@profile
 def update_info_mz(df_seed, ms):
     '''
     Calib m/z, update the measure m/z
@@ -210,7 +211,7 @@ def update_info_mz(df_seed, ms):
     frac = 0.1
     y_lowess = lowess(y, x, frac=frac)
     x_fit, y_fit = zip(*y_lowess)
-    x_fit, y_fit = np.array(x_fit), np.array(y_fit)
+    x_fit, y_fit = np.array(x_fit, dtype=np.float32), np.array(y_fit, dtype=np.float32)
 
     f = interp1d(x_fit, y_fit, kind='cubic', fill_value='extrapolate')
 
@@ -251,8 +252,10 @@ def update_info_mz(df_seed, ms):
              cycle_valid_lens2, all_push2, all_tof2, all_height2
              ) = ms_map
 
-            all_tof = f(all_tof).astype(np.float32)
-            all_tof2 = f(all_tof2).astype(np.float32)
+            all_tof = f(all_tof)
+            all_tof = all_tof.astype(np.float32)
+            all_tof2 = f(all_tof2)
+            all_tof2 = all_tof2.astype(np.float32)
 
             ms_map = (all_rt,
                       cycle_valid_lens, all_push, all_tof, all_height,

@@ -28,18 +28,19 @@ except NameError:
 
 logger = Logger.get_logger()
 
-def release_gpu_scans(map_gpu):
-    try:
+@profile
+def release_gpu_scans(*map_gpus):
+    for map_gpu in map_gpus:
         del map_gpu['scan_rts']
         del map_gpu['scan_seek_idx']
         del map_gpu['scan_im']
         del map_gpu['scan_mz']
         del map_gpu['scan_height']
+        map_gpu.clear()
         del map_gpu
-        gc.collect()
-        torch.cuda.empty_cache()
-    except:
-        pass
+    del map_gpus
+    # gc.collect()
+    torch.cuda.empty_cache()
 
 
 def convert_numba_to_tensor(x):

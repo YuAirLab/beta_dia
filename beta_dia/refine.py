@@ -160,8 +160,7 @@ def extract_map_by_compare(df_top, ms):
                                          param_g.tol_ppm,
                                          )
             mall_v.append(mall.cpu().numpy())
-    utils.release_gpu_scans(ms1_profile)
-    utils.release_gpu_scans(ms2_profile)
+    utils.release_gpu_scans(ms1_profile, ms2_profile)
 
     maps_center = np.vstack(maps_center_v)
     maps_big = np.vstack(maps_big_v)

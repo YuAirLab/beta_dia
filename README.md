@@ -120,3 +120,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
   * FEAT: refactor code to speed up
 #### 0.4.0
   * FEAT: use model_ys; select locus with x == 1 or deep == 1
+#### 0.5.0
+  * FEAT: speed up load_ms by numba index; add deep_big cut before fast fdr
