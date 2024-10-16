@@ -588,8 +588,7 @@ def screen_locus_by_deep(df_batch, locus_num, top_deep_q):
     group_rank_x = utils.cal_group_rank(
         df_batch['seek_score_sa_x_deep'].values, group_size_cumsum
     )
-    df_batch['group_rank'] = group_rank_x
-    idx = (group_rank_deep == 1) | (group_rank_x == 1)
+    idx = (group_rank_deep <= 1) | (group_rank_x <= 1)
     df_batch = df_batch[idx].reset_index(drop=True)
     return df_batch
 

@@ -595,6 +595,14 @@ def scoring_putatives(df):
     df['score_big_deep_pre_putative1'] = big_v - big_max_v
     df['score_big_deep_pre_putative2'] = np.log(big_v + a) / (big_sum_v + a)
 
+    # rank
+    group_size = df.groupby('pr_id', sort=False).size()
+    group_size_cumsum = np.concatenate([[0], np.cumsum(group_size)])
+    group_rank = utils.cal_group_rank(
+        df['score_big_deep_pre'].values, group_size_cumsum
+    )
+    df['group_rank'] = group_rank
+
     return df
 
 

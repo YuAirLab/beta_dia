@@ -282,8 +282,8 @@ def cal_q_pr_first(df, batch_size, n_model, model_trained=None, scaler=None):
     if (model_trained is None) and (group_rank_max > 1):
         decoy_deeps = df.loc[df['decoy'] == 1, 'score_big_deep_pre'].values
         decoy_m, decoy_u = np.mean(decoy_deeps), np.std(decoy_deeps)
-        good_cut = decoy_m + 3 * decoy_u
-        logger.info(f'Training with good_big_score: {good_cut:.2f}')
+        good_cut = min(0.5, decoy_m + 1.5 * decoy_u)
+        logger.info(f'Training with big_score_cut: {good_cut:.2f}')
         train_idx = (df['group_rank'] == 1) & (df['score_big_deep_pre'] > good_cut)
         X_train = X[train_idx]
         y_train = y[train_idx]
