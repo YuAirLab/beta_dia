@@ -321,25 +321,22 @@ def retrain_model_map(model_maps, maps, valid_nums, labels, maps_type, epochs):
             train_loader, model_maps, optimizer, loss_fn
         )
         acc = eval_one_epoch(eval_loader, model_maps)
-        # info = 'Deep{} refine epoch {}, loss: {:.3f}, acc: {:.3f}'.format(
-        #     maps_type, i, epoch_loss, acc
-        # )
-        # logger.info(info)
+        info = 'Deep{} refine epoch {}, loss: {:.3f}, acc: {:.3f}'.format(
+            maps_type, i, epoch_loss, acc
+        )
 
         # early stop and save best
         if acc >= acc_best:
             acc_best = acc
             model_best = copy.deepcopy(model_maps)
             patience_counter = 0
-            info = 'Deep{} refine epoch {}, loss: {:.3f}, acc: {:.3f}'.format(
-                maps_type, i, epoch_loss, acc
-            )
+            info_best = info
         else:
             patience_counter += 1
         if patience_counter >= param_g.patient:
-            logger.info(info)
+            info = info_best
             break
-
+    logger.info(info)
     return model_best
 
 

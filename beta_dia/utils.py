@@ -279,31 +279,38 @@ def get_args():
     # required=True
     parser.add_argument(
         '-ws', required=True,
-        help='specify the folder that is .d or contains .d files.'
+        help='Specify the folder that is .d or contains .d files.'
     )
     parser.add_argument(
         '-lib', required=True,
-        help='specify the absolute path of a .speclib spectra library.'
+        help='Specify the absolute path of a .speclib spectra library.'
     )
 
     # optional
     parser.add_argument(
         '-out_name', type=str, default='beta_dia',
-        help='specify the folder name of outputs. Default: beta_dia.'
+        help='Specify the folder name of outputs. Default: beta_dia.'
     )
     parser.add_argument(
         '-gpu_id', type=int, default=0,
-        help='specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0'
+        help='Specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0'
     )
     parser.add_argument(
-        '-save_pkl', action='store_true',
-        help='save_pkl is True for the developer. Default: False'
+        '-start_id', type=int, default=0,
+        help='Specify from which file the analysis should start. Default: 0'
     )
-    args = parser.parse_args()
+
+    # develop
+    parser.add_argument(
+        '-save_pkl', action='store_true',
+        help='Developing use. Default: False'
+    )
 
     # process params
+    args = parser.parse_args()
     init_gpu_params(args.gpu_id)
     param_g.is_save_pkl = args.save_pkl
+    param_g.start_id = args.start_id - 1
 
     return Path(args.ws), Path(args.lib), args.out_name
 
