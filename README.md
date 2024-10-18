@@ -126,3 +126,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
   * FIX: train mlp by data with good_big_cut of 1.5sigma; rank by deep_big
 #### 0.5.2
   * FEAT: add param start_id
+#### 0.5.3
+  * FIX: calib m/z using np.float64; remove autocast; model_ys_fast is ok

@@ -34,7 +34,7 @@ def load_model_big(dir_model, channels):
     model = models.DeepMap(channels)
     device = param_g.gpu_id
     if dir_model is None:
-        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepbig_ys.pt'
+        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepbig_ys_fast.pt'
         model.load_state_dict(torch.load(pt_path, map_location=device))
     else:
         model.load_state_dict(torch.load(dir_model, map_location=device))
@@ -47,7 +47,7 @@ def load_model_center(dir_model, channels):
     model = models.DeepMap(channels)
     device = param_g.gpu_id
     if dir_model is None:
-        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepcenter_ys.pt'
+        pt_path = Path(__file__).resolve().parent/'pretrained'/'deepcenter_ys_fast.pt'
         model.load_state_dict(torch.load(pt_path, map_location=device))
     else:
         model.load_state_dict(torch.load(dir_model, map_location=device))
@@ -453,8 +453,8 @@ def scoring_maps(
         valid_ion_nums = torch.from_numpy(
             np.repeat(valid_ion_nums, locus_num)).long().to(param_g.gpu_id)
         with torch.no_grad():
-            with torch.cuda.amp.autocast():
-                feature, pred = model(maps, valid_ion_nums)
+            # with torch.cuda.amp.autocast():
+            feature, pred = model(maps, valid_ion_nums)
         torch.cuda.synchronize()  # for profile
 
         pred = torch.softmax(pred, 1)
@@ -581,8 +581,8 @@ def extract_scoring_big(
         maps_sub = maps[:, idx]
         valid_ion_nums = torch.from_numpy(valid_ion_nums).long().to(param_g.gpu_id)
         with torch.no_grad():
-            with torch.cuda.amp.autocast():
-                feature, pred = model(maps_sub, valid_ion_nums)
+            # with torch.cuda.amp.autocast():
+            feature, pred = model(maps_sub, valid_ion_nums)
         torch.cuda.synchronize()
         pred = torch.softmax(pred, 1)
         pred = pred[:, 1].cpu().numpy().astype(np.float32)

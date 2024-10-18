@@ -211,7 +211,7 @@ def update_info_mz(df_seed, ms):
     frac = 0.1
     y_lowess = lowess(y, x, frac=frac)
     x_fit, y_fit = zip(*y_lowess)
-    x_fit, y_fit = np.array(x_fit, dtype=np.float32), np.array(y_fit, dtype=np.float32)
+    x_fit, y_fit = np.array(x_fit), np.array(y_fit)
 
     f = interp1d(x_fit, y_fit, kind='cubic', fill_value='extrapolate')
 
