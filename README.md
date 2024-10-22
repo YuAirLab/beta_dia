@@ -128,3 +128,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
   * FEAT: add param start_id
 #### 0.5.3
   * FIX: calib m/z using np.float64; remove autocast; model_ys_fast is ok
+#### 0.5.4
+  * FEAT: two methods (ascending or descending) to polish prs; remove left > center

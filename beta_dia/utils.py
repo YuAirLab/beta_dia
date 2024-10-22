@@ -299,7 +299,10 @@ def get_args():
         '-start_idx', type=int, default=0,
         help='Specify from which file the analysis should start. Default: 0'
     )
-
+    parser.add_argument(
+        'end_idx', type=int, default=float('inf'),
+        help='Specify from which file the analysis should end. Default: inf'
+    )
     # develop
     parser.add_argument(
         '-save_pkl', action='store_true',
@@ -311,6 +314,7 @@ def get_args():
     init_gpu_params(args.gpu_id)
     param_g.is_save_pkl = args.save_pkl
     param_g.start_idx = args.start_idx - 1
+    param_g.end_idx = args.end_idx
 
     return Path(args.ws), Path(args.lib), args.out_name
 
