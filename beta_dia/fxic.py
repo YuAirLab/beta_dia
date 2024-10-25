@@ -2,6 +2,7 @@ import math
 
 import numba
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
 from numba import cuda
@@ -674,3 +675,94 @@ def estimate_xic_boundary(xics, sa_gausion_m):
     right_idx = torch.round(right_idx)  # or floor
 
     return left_idx.int().cpu().numpy(), right_idx.int().cpu().numpy()
+
+
+from itertools import product
+
+def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
+    locus_start_v = df_batch['score_elute_span_left'].values
+    locus_end_v = df_batch['score_elute_span_right'].values
+
+    tol_ppm_v = [20., 16., 12., 8., 4.]
+    tol_im_v = [0.03, 0.02, 0.01]
+    grid_params = list(product(tol_ppm_v, tol_im_v))
+
+    xics_v = []
+    expand_dim = 64
+    for search_i, (tol_ppm, tol_im) in enumerate(grid_params):
+        _, rts, _, _, xics = extract_xics(
+            df_batch,
+            ms1_centroid,
+            ms2_centroid,
+            im_tolerance=tol_im,
+            ppm_tolerance=tol_ppm,
+            cycle_num=13,
+            by_pred=False
+        )
+        xics = xics.copy_to_host()
+        mask1 = np.arange(xics.shape[2]) >= locus_start_v[:, None, None]
+        mask2 = np.arange(xics.shape[2]) <= locus_end_v[:, None, None]
+        xics = xics * mask1 * mask2
+        rts, xics = utils.interp_xics(xics, rts, expand_dim)
+        xics = gpu_simple_smooth(cuda.to_device(xics))
+        xics = xics.copy_to_host()
+
+        # find best profile
+        if search_i == 0:
+            sas = np.array(list(map(utils.cross_cos, xics)))
+            sa_sum = sas.sum(axis=-1)
+            best_ion_idx = sa_sum.argmax(axis=-1)
+            best_profile = xics[np.arange(len(xics)), best_ion_idx]
+
+            bad_xic = np.abs(best_profile.argmax(axis=-1) - expand_dim/2) > 6
+
+            # boundary by best_profile
+            box = best_profile > best_profile.max(axis=-1, keepdims=True) * 0.2
+            left = box.argmax(axis=-1)
+            right = expand_dim - 1 - box[:, ::-1].argmax(axis=-1)
+            df_batch['integral_left'] = left
+            df_batch['integral_right'] = right
+
+        xics_v.append(xics)
+    xics = np.transpose(np.stack(xics_v), (1, 0, 2, 3))
+
+    # find other profile with the help of best_profile
+    ion_num = xics.shape[2]
+    best_profile = np.repeat(
+        best_profile[:, None, :], len(grid_params), axis=1
+    )
+    best_profile = np.repeat(best_profile[:, :, None, :], ion_num, axis=2)
+    dot_sum = (best_profile * xics).sum(axis=-1)
+    norm1 = np.linalg.norm(best_profile, axis=-1) + 1e-6
+    norm2 = np.linalg.norm(xics, axis=-1) + 1e-6
+    sas = dot_sum / (norm1 * norm2)
+    sas = sas.max(axis=1)
+
+    return sas
+
+
+def update_sa_by_grid(df, ms):
+    df_good = []
+    for swath_id in df['swath_id'].unique():
+        df_swath = df[df['swath_id'] == swath_id]
+        df_swath = df_swath.reset_index(drop=True)
+
+        # ms
+        ms1_centroid, ms2_centroid = ms.copy_map_to_gpu(swath_id, centroid=True)
+
+        # in batches
+        batch_n = param_g.batch_xic_locus
+        for batch_idx, df_batch in df_swath.groupby(df_swath.index // batch_n):
+            df_batch = df_batch.reset_index(drop=True)
+
+            # grid search for best profiles
+            sas = grid_xic_best(df_batch, ms1_centroid, ms2_centroid)
+
+            cols_center = ['score_center_elution_' + str(i) for i in range(14)]
+            df_batch[cols_center] = sas
+            df_good.append(df_batch)
+
+        utils.release_gpu_scans(ms1_centroid, ms2_centroid)
+
+    df = pd.concat(df_good, axis=0, ignore_index=True)
+    return df

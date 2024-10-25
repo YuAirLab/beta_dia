@@ -8,16 +8,6 @@ from beta_dia import param_g
 logger = Logger.get_logger()
 
 @jit(nopython=True, nogil=True)
-def cal_fg_share_num(fg_mz_1, fg_mz_2, tol_ppm):
-    fg_mz_1 = fg_mz_1.reshape(-1, 1)
-    fg_mz_2 = fg_mz_2.reshape(1, -1)
-    delta_mz = np.abs(fg_mz_1 - fg_mz_2)
-    ppm_delta_mz = delta_mz / (fg_mz_1 + 1e-7) * 1e6
-    share_num = np.sum((ppm_delta_mz < tol_ppm) & (fg_mz_1 > 0))
-    return share_num
-
-
-@jit(nopython=True, nogil=True)
 def is_fg_share(fg_mz_1, fg_mz_2, tol_ppm):
     x, y = fg_mz_1.reshape(-1, 1), fg_mz_2.reshape(1, -1)
 
@@ -29,359 +19,235 @@ def is_fg_share(fg_mz_1, fg_mz_2, tol_ppm):
 
     return is_share_x
 
+
+def polish_prs_in5(df, tol_im, tol_ppm, tol_sa_ratio):
+    '''
+    1. Co-fragmentation prs should be polished.
+    2. Decoy prs with cscore less than min(target) should be removed.
+    '''
+    # logger.info('Removing dubious target prs in 5%-FDR...')
+
+    assert df['group_rank'].max() == 1
+
+    target_good_idx = (df['decoy'] == 0) & (df['q_pr'] < 0.05)
+    df_target = df[target_good_idx]
+    df_other = df[~target_good_idx]
+    target_num_before = len(df_target)
+
+    # tol_locus is from the half of span
+    spans = df_target.loc[df_target['q_pr'] < 0.01, 'score_elute_span']
+    tol_locus = np.ceil(0.5 * spans.median())
+
+    df_target = df_target.sort_values(
+        by=['swath_id'],
+        ascending=[True],
+        ignore_index=True
+    )
+
+    swath_id_v = df_target['swath_id'].values
+    measure_locus_v = df_target['locus'].values
+    measure_im_v = df_target['measure_im'].values
+
+    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
+    fg_mz_center = df_target[cols_center].values
+    cols_center = ['score_center_elution_' + str(i) for i in range(2, 14)]
+    sa_center = df_target[cols_center].values
+
+    cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
+    fg_mz_1H = df_target[cols_1H].values
+    cols_1H = ['score_1H_elution_' + str(i) for i in range(2, 14)]
+    sa_1H = df_target[cols_1H].values
+
+    pr_mz_unfrag = df_target['pr_mz'].values.reshape(-1, 1)
+    sa_pr_unfrag = df_target['score_center_elution_1'].values.reshape(-1, 1)
+
+    fg_mz_m = np.concatenate([pr_mz_unfrag, fg_mz_center, fg_mz_1H], axis=1)
+    fg_mz_m = np.ascontiguousarray(fg_mz_m)
+    sa_m = np.concatenate([sa_pr_unfrag, sa_center, sa_1H], axis=1)
+    sa_m = np.ascontiguousarray(sa_m)
+
+    is_dubious_m, competer_pr_num = polish_prs_in5_core(
+        swath_id_v, measure_locus_v, measure_im_v,
+        fg_mz_m, tol_locus, tol_im, tol_ppm
+    )
+    disturb_ratios = (is_dubious_m * sa_m).sum(axis=1) / (sa_m.sum(axis=1) + 1e-7)
+    df_target = df_target[disturb_ratios < tol_sa_ratio].reset_index(drop=True)
+
+    # remove one-by-one
+    # while True:
+    #     is_dubious_m, competer_pr_num = polish_prs_core1(
+    #         swath_id_v, measure_locus_v, measure_im_v,
+    #         fg_mz_m,
+    #         tol_locus, tol_im, tol_ppm
+    #     )
+    #     disturb_ratios = (is_dubious_m * sa_m).sum(axis=1) / (sa_m.sum(axis=1) + 1e-7)
+    #     df_target['competer_num'] = competer_pr_num
+    #     df_target['disturb_ratio'] = disturb_ratios
+    #
+    #     if disturb_ratios.max() > tol_sa_ratio:
+    #         # 删除disturb_ratios最大值的行，如果有多个，先删除cscore_pr最小的行
+    #         max_rows = disturb_ratios == disturb_ratios.max()
+    #         dfx = df_target[max_rows]
+    #         dfx = dfx.sort_values(by=['competer_num', 'cscore_pr'], ascending=[False, True])
+    #         drop_idx = dfx.index[0]
+    #         idx = df_target.index.values != drop_idx
+    #         df_target = df_target.drop(drop_idx).reset_index(drop=True)
+    #         swath_id_v = swath_id_v[idx]
+    #         measure_locus_v = measure_locus_v[idx]
+    #         measure_im_v = measure_im_v[idx]
+    #         fg_mz_m = fg_mz_m[idx]
+    #         sa_m = sa_m[idx]
+    #     else:
+    #         break
+
+    # result
+    target_num_now = len(df_target)
+    df = pd.concat([df_target, df_other], ignore_index=True)
+    info = 'Removing dubious target prs in 5%-FDR: {}/{}'.format(
+        target_num_before - target_num_now, target_num_before
+    )
+    logger.info(info)
+
+    return df
+
+
 @jit(nopython=True, nogil=True, parallel=False)
-def polish_core(swath_id_v, measure_locus_v, measure_im_v,
-                fg_mz_m, is_share_m, cscore_v,
-                tol_locus, tol_im, tol_ppm, related_pr_num_v, is_related_best_v):
-    '''
-    Each thread processes a pr with cscore_pr ascending.
-    '''
+def polish_prs_in5_core(swath_id_v, measure_locus_v, measure_im_v,
+                        fg_mz_m, tol_locus, tol_im, tol_ppm):
+    is_dubious_m = np.zeros_like(fg_mz_m, dtype=np.bool_)
+    competor_pr_nums = np.zeros_like(swath_id_v)
+
     for i in range(len(swath_id_v)):
         swath_id_i = swath_id_v[i]
         measure_locus_i = measure_locus_v[i]
         measure_im_i = measure_im_v[i]
         fg_mz_i = fg_mz_m[i]
-        cscore_i = cscore_v[i]
 
-        for j in range(i+1, len(swath_id_v)):
+        for j in range(len(swath_id_v)):
+            if j == i:
+                continue
 
             swath_id_j = swath_id_v[j]
             if swath_id_i != swath_id_j:
-                break
+                continue
 
             measure_locus_j = measure_locus_v[j]
             if abs(measure_locus_i - measure_locus_j) > tol_locus:
-                break
+                continue
 
             measure_im_j = measure_im_v[j]
             if abs(measure_im_i - measure_im_j) > tol_im:
-                break
+                continue
 
             fg_mz_j = fg_mz_m[j]
-            share_num = cal_fg_share_num(fg_mz_i, fg_mz_j, tol_ppm)
-            if share_num <= 0:
-                continue
-
-            is_share_x, is_share_y = is_fg_share(fg_mz_i, fg_mz_j, tol_ppm)
-            is_share_m[i] |= is_share_x
-            is_share_m[j] |= is_share_y
-
-            related_pr_num_v[i] += 1
-            related_pr_num_v[j] += 1
-
-            cscore_j = cscore_v[j]
-            if cscore_i > cscore_j:
-                is_related_best_v[i] = True
-            else:
-                is_related_best_v[j] = True
-
-
-def polish_after_qvalue(df, tol_locus, tol_im, tol_ppm, tol_share_num):
-    '''
-    Polish target prs after the calculation of qvalues.
-    Args:
-        df: already q cut at 5% FDR
-
-    Returns:
-        df with ['share_num'] to refer a better pr leading this id.
-    '''
-    pr_num_before = len(df[(df['q_pr'] < 0.01) & (df['decoy'] == 0)])
-
-    assert df['q_pr'].max() <= 0.05
-    assert df['group_rank'].max() == 1
-
-    df_target = df[df['decoy'] == 0]
-    df_decoy = df[df['decoy'] == 1]
-
-    df_target = df_target.sort_values(
-        by=['swath_id', 'locus', 'measure_im'],
-        ascending=[True, True, True],
-        ignore_index=True
-    )
-
-    swath_id_v = df_target['swath_id'].values
-    measure_locus_v = df_target['locus'].values
-    measure_im_v = df_target['measure_im'].values
-    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
-    fg_mz_m = df_target[cols_center].values
-    cscore_v = df_target['cscore_pr'].values
-
-    is_fg_share_m = np.zeros((len(swath_id_v), fg_mz_m.shape[-1]), dtype=bool)
-    related_pr_num_v = np.zeros_like(swath_id_v)
-    is_related_best_v = np.zeros_like(swath_id_v, dtype=bool)
-
-    polish_core(
-        swath_id_v, measure_locus_v, measure_im_v,
-        fg_mz_m, is_fg_share_m, cscore_v,
-        tol_locus, tol_im, tol_ppm, related_pr_num_v, is_related_best_v
-    )
-
-    fg_share_num_v = is_fg_share_m.sum(axis=1)
-    assert fg_share_num_v.max() <= is_fg_share_m.shape[-1]
-    assert sum((fg_share_num_v >= 1) & (related_pr_num_v <= 0)) == 0
-
-    df_target['share_fg_num'] = fg_share_num_v
-    df_target['related_pr_num'] = related_pr_num_v
-    df_target['related_best'] = is_related_best_v
-
-    # df_target.loc[
-    #     (df_target['share_fg_num'] >= tol_share_num) &
-    #     (df_target['related_pr_num'] >= 2), 'q_pr'] = 1
-    # df_target.loc[
-    #     (df_target['share_fg_num'] >= tol_share_num) &
-    #     (df_target['related_best'] == False), 'q_pr'] = 1
-
-    df_target.loc[df_target['share_fg_num'] >= tol_share_num, 'q_pr'] = 1
-
-    df_decoy['share_fg_num'] = -1
-    df_decoy['related_pr_num'] = -1
-    df_decoy['related_best'] = False
-    df = pd.concat([df_target, df_decoy], ignore_index=True)
-
-    pr_num_after = len(df[(df['q_pr'] < 0.01) & (df['decoy'] == 0)])
-    info = 'Prs with share fgs before polish: {}, after: {}'.format(
-        pr_num_before, pr_num_after
-    )
-    logger.info(info)
-
-    return df
-
-
-
-@jit(nopython=True, nogil=True, parallel=False)
-def polish_prs_core(swath_id_v, measure_locus_v, measure_im_v,
-                fg_mz_m_i, fg_mz_m_j,
-                tol_locus, tol_im, tol_ppm, tol_share_num):
-    '''
-    Each thread processes a pr with cscore_pr ascending.
-    '''
-    is_dubious_v = np.zeros_like(swath_id_v, dtype=np.int32)
-
-    for i in range(len(swath_id_v)):
-        swath_id_i = swath_id_v[i]
-        measure_locus_i = measure_locus_v[i]
-        measure_im_i = measure_im_v[i]
-        fg_mz_i = fg_mz_m_i[i]
-
-        for j in range(i+1, len(swath_id_v)):
-            is_dubious = is_dubious_v[j]
-            if is_dubious:
-                continue
-
-            swath_id_j = swath_id_v[j]
-            if swath_id_i != swath_id_j:
-                break
-
-            measure_locus_j = measure_locus_v[j]
-            if abs(measure_locus_i - measure_locus_j) > tol_locus:
-                continue
-
-            measure_im_j = measure_im_v[j]
-            if abs(measure_im_i - measure_im_j) > tol_im:
-                continue
-
-            fg_mz_j = fg_mz_m_j[j]
-            share_num = cal_fg_share_num(fg_mz_i, fg_mz_j, tol_ppm)
-
-            if share_num >= tol_share_num:
-                is_dubious_v[j] = True
-
-    return is_dubious_v
-
-
-@jit(nopython=True, nogil=True, parallel=False)
-def polish_prs_core2(swath_id_v, measure_locus_v, measure_im_v,
-                fg_mz_m_i, fg_mz_m_j,
-                tol_locus, tol_im, tol_ppm):
-    '''
-    Each thread processes a pr with cscore_pr ascending.
-    '''
-    is_dubious_m = np.zeros_like(fg_mz_m_i, dtype=np.bool_)
-
-    for i in range(len(swath_id_v)):
-        swath_id_i = swath_id_v[i]
-        measure_locus_i = measure_locus_v[i]
-        measure_im_i = measure_im_v[i]
-        fg_mz_i = fg_mz_m_i[i]
-
-        for j in range(i+1, len(swath_id_v)):
-
-            swath_id_j = swath_id_v[j]
-            if swath_id_i != swath_id_j:
-                break
-
-            measure_locus_j = measure_locus_v[j]
-            if abs(measure_locus_i - measure_locus_j) > tol_locus:
-                continue
-
-            measure_im_j = measure_im_v[j]
-            if abs(measure_im_i - measure_im_j) > tol_im:
-                continue
-
-            fg_mz_j = fg_mz_m_j[j]
             is_share_v = is_fg_share(fg_mz_i, fg_mz_j, tol_ppm)
             for k in range(len(is_share_v)):
                 is_dubious_m[i, k] |= is_share_v[k]
 
-    return is_dubious_m
+            if np.sum(is_share_v) > 0:
+                competor_pr_nums[i] += 1
+
+    return is_dubious_m, competor_pr_nums
 
 
-def polish_prs(df, tol_im, tol_ppm, tol_share_num):
+def polish_prs_over5(df, tol_im, tol_ppm, tol_sa_ratio):
     '''
     1. Co-fragmentation prs should be polished.
     2. Decoy prs with cscore less than min(target) should be removed.
     '''
-    logger.info('Polishing dubious target prs and low confidence decoy prs...')
+    # logger.info('Removing dubious target prs over 5%-FDR...')
 
     assert df['group_rank'].max() == 1
 
-    df_target = df[df['decoy'] == 0]
-    df_decoy = df[df['decoy'] == 1]
-
     # tol_locus is from the half of span
-    spans = df_target.loc[df_target['q_pr'] < 0.01, 'score_elute_span']
+    spans = df.loc[df['q_pr'] < 0.01, 'score_elute_span']
     tol_locus = np.ceil(0.5 * spans.median())
-    logger.info(f'Span median is: {spans.median()}, tol_locus is: {tol_locus}')
+    # logger.info(f'Span median is: {spans.median()}, tol_locus is: {tol_locus}')
 
-    df_target = df_target.sort_values(
+    df = df.sort_values(
         by=['swath_id', 'cscore_pr'],
         ascending=[True, False],
         ignore_index=True
     )
 
-    swath_id_v = df_target['swath_id'].values
-    measure_locus_v = df_target['locus'].values
-    measure_im_v = df_target['measure_im'].values
+    swath_id_v = df['swath_id'].values
+    measure_locus_v = df['locus'].values
+    measure_im_v = df['measure_im'].values
+
     cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
-    fg_mz_center = df_target[cols_center].values
+    fg_mz_center = df[cols_center].values
+    cols_center = ['score_center_elution_' + str(i) for i in range(2, 14)]
+    sa_center = df[cols_center].values
+
     cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
-    fg_mz_1H = df_target[cols_1H].values
-    pr_mz = df_target['pr_mz'].values.reshape(-1, 1)
-    fg_mz_m_i = np.concatenate([pr_mz, fg_mz_center, fg_mz_1H], axis=1)
-    fg_mz_m_i = np.ascontiguousarray(fg_mz_m_i)
-    fg_mz_m_j = np.concatenate([fg_mz_center], axis=1)
-    fg_mz_m_j = np.ascontiguousarray(fg_mz_m_j)
+    fg_mz_1H = df[cols_1H].values
+    cols_1H = ['score_1H_elution_' + str(i) for i in range(2, 14)]
+    sa_1H = df[cols_1H].values
 
-    is_dubious_v = polish_prs_core(
+    pr_mz_unfrag = df['pr_mz'].values.reshape(-1, 1)
+    sa_pr_unfrag = df['score_center_elution_1'].values.reshape(-1, 1)
+
+    fg_mz_m = np.concatenate([pr_mz_unfrag, fg_mz_center, fg_mz_1H], axis=1)
+    fg_mz_m = np.ascontiguousarray(fg_mz_m)
+    sa_m = np.concatenate([sa_pr_unfrag, sa_center, sa_1H], axis=1)
+    sa_m = np.ascontiguousarray(sa_m)
+
+    q_value_v = df['q_pr'].values
+
+    is_dubious_m = polish_prs_over5_core(
             swath_id_v, measure_locus_v, measure_im_v,
-            fg_mz_m_i, fg_mz_m_j,
-            tol_locus, tol_im, tol_ppm, tol_share_num
+            fg_mz_m, tol_locus, tol_im, tol_ppm, q_value_v
         )
-    is_dubious_v = is_dubious_v.astype(np.bool)
-    target_num_before = len(df_target)
-    df_target = df_target[~is_dubious_v]
-
-    # removing low confidence decoy prs
-    cut = df_target['cscore_pr'].min()
-    bad_decoys_num = (df_decoy['cscore_pr'] < cut).sum()
-    decoy_num_before = len(df_decoy)
-    df_decoy = df_decoy[df_decoy['cscore_pr'] > cut]
-
-    # result
-    df = pd.concat([df_target, df_decoy], ignore_index=True)
-    info = 'Remove dubious target prs: {}/{}, bad decoys prs: {}/{}'.format(
-        sum(is_dubious_v), target_num_before, bad_decoys_num, decoy_num_before
-    )
-    logger.info(info)
-
-    return df
-
-
-
-def polish_prs2(df, tol_im, tol_ppm, tol_sa_ratio):
-    '''
-    1. Co-fragmentation prs should be polished.
-    2. Decoy prs with cscore less than min(target) should be removed.
-    '''
-    logger.info('Polishing dubious target prs and low confidence decoy prs...')
-
-    assert df['group_rank'].max() == 1
-
-    df_target = df[df['decoy'] == 0]
-    df_decoy = df[df['decoy'] == 1]
-
-    # tol_locus is from the half of span
-    spans = df_target.loc[df_target['q_pr'] < 0.01, 'score_elute_span']
-    tol_locus = np.ceil(0.5 * spans.median())
-
-    df_target = df_target.sort_values(
-        by=['swath_id', 'cscore_pr'],
-        ascending=[True, True],
-        ignore_index=True
-    )
-
-    swath_id_v = df_target['swath_id'].values
-    measure_locus_v = df_target['locus'].values
-    measure_im_v = df_target['measure_im'].values
-    cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
-    fg_mz_center = df_target[cols_center].values
-    cols_1H = ['fg_mz_1H_' + str(i) for i in range(param_g.fg_num)]
-    fg_mz_1H = df_target[cols_1H].values
-    pr_mz = df_target['pr_mz'].values.reshape(-1, 1)
-    fg_mz_m_i = np.concatenate([fg_mz_center], axis=1)
-    fg_mz_m_i = np.ascontiguousarray(fg_mz_m_i)
-    fg_mz_m_j = np.concatenate([pr_mz, fg_mz_center, fg_mz_1H], axis=1)
-    fg_mz_m_j = np.ascontiguousarray(fg_mz_m_j)
-
-    is_dubious_m = polish_prs_core2(
-            swath_id_v, measure_locus_v, measure_im_v,
-            fg_mz_m_i, fg_mz_m_j,
-            tol_locus, tol_im, tol_ppm
-        )
-    columns = [f'score_center_elution_{i}' for i in range(2, 14)]
-    sa_m = df_target[columns].values
     disturb_ratios = (is_dubious_m * sa_m).sum(axis=1) / (sa_m.sum(axis=1) + 1e-7)
-    target_num_before = len(df_target)
+    target_num_before = len(df)
     is_dubious_v = disturb_ratios >= tol_sa_ratio
-    df_target = df_target[~is_dubious_v]
+    df['is_dubious'] = is_dubious_v
+    df = df[~is_dubious_v].reset_index(drop=True)
 
     # result
-    df = pd.concat([df_target, df_decoy], ignore_index=True)
-    info = 'Remove dubious target prs: {}/{}'.format(
-        sum(is_dubious_v), target_num_before
+    remove_num = target_num_before - len(df)
+    info = 'Removing dubious target prs over 5%-FDR: {}/{}'.format(
+        remove_num, target_num_before
     )
     logger.info(info)
 
     return df
 
 
-def polish_prs_after(df):
-    n = 1
-    # df = df.loc[df['score_deep_center_sub_left_refine'] > 0, :]
-    species_v = []
+@jit(nopython=True, nogil=True, parallel=False)
+def polish_prs_over5_core(swath_id_v, measure_locus_v, measure_im_v,
+                          fg_mz_m, tol_locus, tol_im, tol_ppm, q_value_v):
+    '''
+    Each thread processes a pr with cscore_pr ascending.
+    '''
+    is_dubious_m = np.zeros_like(fg_mz_m, dtype=np.bool_)
 
-    # less is better
-    cols = ['score_left_coelution', 'score_left_coelution_top6',
-            'score_left_deep_pre', 'score_left_deep_refine',
-            'score_rt_abs', 'score_imbias_average1', 'score_ppm_average1',
-            'score_left_deep_refine_p1', 'score_left_deep_refine_p2',]
-    for col in cols:
-        species = df.loc[df[col].idxmax(), 'species']
-        species_v.append(species)
-        print(col, species)
+    for i in range(len(swath_id_v)):
+        swath_id_i = swath_id_v[i]
+        measure_locus_i = measure_locus_v[i]
+        measure_im_i = measure_im_v[i]
+        fg_mz_i = fg_mz_m[i]
 
-    # more is better
-    cols = ['score_center_coelution', 'score_center_coelution_top6',
-            'score_1H_coelution', 'score_1H_coelution_top6',
-            'score_center_p1_coelution', 'score_center_p1_coelution_top6',
-            'score_center_p2_coelution', 'score_center_p2_coelution_top6',
-            'score_intensity_similarity', 'score_intensity_similarity_cube',
-            'score_area_similarity', 'score_area_similarity_cube',
-            'score_center_deep_pre', 'score_1H_deep_pre', 'score_big_deep_pre',
-            'score_center_deep_refine', 'score_1H_deep_refine', 'score_big_deep_refine',
-            'score_center_deep_refine_p1', 'score_1H_deep_refine_p1', 'score_big_deep_refine_p1',
-            'score_center_deep_refine_p2', 'score_1H_deep_refine_p2', 'score_big_deep_refine_p2',
-            'score_coelution_center_sub_left', 'score_deep_center_sub_left', 'score_deep_center_sub_left_refine',
-            'score_coelution_x_center', 'score_coelution_x_big',
-            'score_coelution_x_center_refine', 'score_coelution_x_big_refine',
-            'score_mall']
-    for col in cols:
-        species = df.loc[df[col].idxmin(), 'species']
-        species_v.append(species)
-        print(col, species)
+        for j in range(i+1, len(swath_id_v)):
+            q_value_j = q_value_v[j]
+            if q_value_j < 0.05:
+                continue
 
-    species_v = pd.Series(species_v)
-    num_arath = sum(species_v == 'ARATH')
-    print(f'Total: {len(species_v)}, ARATH: {num_arath}')
+            swath_id_j = swath_id_v[j]
+            if swath_id_i != swath_id_j:
+                break
 
-    return df
+            measure_locus_j = measure_locus_v[j]
+            if abs(measure_locus_i - measure_locus_j) > tol_locus:
+                continue
+
+            measure_im_j = measure_im_v[j]
+            if abs(measure_im_i - measure_im_j) > tol_im:
+                continue
+
+            fg_mz_j = fg_mz_m[j]
+            is_share_v = is_fg_share(fg_mz_j, fg_mz_i, tol_ppm)
+            for k in range(len(is_share_v)):
+                is_dubious_m[j, k] |= is_share_v[k]
+
+    return is_dubious_m

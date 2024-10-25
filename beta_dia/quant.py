@@ -11,34 +11,6 @@ from beta_dia.log import Logger
 
 logger = Logger.get_logger()
 
-def cross_cos(x):
-    norms = np.linalg.norm(x, axis=1) + 1e-6
-    normalized_x = x / norms[:, np.newaxis]
-    cosine_sim = np.dot(normalized_x, normalized_x.T)
-    return cosine_sim
-
-
-@jit(nopython=True, nogil=True, parallel=True)
-def interp_xics(xics, rts, target_dim):
-    '''
-    xics: [n_pep, n_ion, n_cycle]
-    rts: [n_pep, n_cycle]
-    result_xics: [n_pep, n_ion, target_dim]
-    result_rts: [n_pep, target_dim]
-    '''
-    n_pep, n_ion, n_cycle = xics.shape
-    result_xics = np.zeros((n_pep, n_ion, target_dim))
-    result_rts = np.zeros((n_pep, target_dim))
-    for i_pep in prange(n_pep):
-        rts_pep = rts[i_pep]
-        rts_interp = np.linspace(rts_pep[0], rts_pep[-1], target_dim)
-        result_rts[i_pep] = rts_interp
-        for i_ion in range(n_ion):
-            xic_raw = xics[i_pep, i_ion]
-            xic_interp = np.interp(rts_interp, rts_pep, xic_raw)
-            result_xics[i_pep, i_ion] = xic_interp
-    return result_rts, result_xics
-
 
 def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
     locus_start_v = df_batch['score_elute_span_left'].values
@@ -64,13 +36,13 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
         mask1 = np.arange(xics.shape[2]) >= locus_start_v[:, None, None]
         mask2 = np.arange(xics.shape[2]) <= locus_end_v[:, None, None]
         xics = xics * mask1 * mask2
-        rts, xics = interp_xics(xics, rts, expand_dim)
+        rts, xics = utils.interp_xics(xics, rts, expand_dim)
         xics = fxic.gpu_simple_smooth(cuda.to_device(xics))
         xics = xics.copy_to_host()
 
         # find best profile
         if search_i == 0:
-            sas = np.array(list(map(cross_cos, xics)))
+            sas = np.array(list(map(utils.cross_cos, xics)))
             sa_sum = sas.sum(axis=-1)
             best_ion_idx = sa_sum.argmax(axis=-1)
             best_profile = xics[np.arange(len(xics)), best_ion_idx]
@@ -126,7 +98,7 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
     mask1 = np.arange(xics2.shape[2]) >= locus_start_v[:, None, None]
     mask2 = np.arange(xics2.shape[2]) <= locus_end_v[:, None, None]
     xics2 = xics2 * mask1 * mask2
-    rts2, xics2 = interp_xics(xics2, rts2, expand_dim)
+    rts2, xics2 = utils.interp_xics(xics2, rts2, expand_dim)
     xics2 = fxic.gpu_simple_smooth(cuda.to_device(xics2))
     xics2 = xics2.copy_to_host()
 

@@ -299,10 +299,7 @@ def get_args():
         '-start_idx', type=int, default=0,
         help='Specify from which file the analysis should start. Default: 0'
     )
-    parser.add_argument(
-        '-end_idx', type=int, default=float('inf'),
-        help='Specify from which file the analysis should end. Default: inf'
-    )
+
     # develop
     parser.add_argument(
         '-save_pkl', action='store_true',
@@ -314,8 +311,6 @@ def get_args():
     init_gpu_params(args.gpu_id)
     param_g.is_save_pkl = args.save_pkl
     param_g.start_idx = args.start_idx - 1
-    if args.end_idx < float('inf'):
-        param_g.end_idx = args.end_idx - 1
 
     return Path(args.ws), Path(args.lib), args.out_name
 
@@ -374,3 +369,43 @@ def init_single_ws(ws_i, total, ws, out_name, dir_lib, entry_num):
     logger.info('.d: ' + str(ws.name))
     logger.info('Lib: ' + Path(dir_lib).name)
     logger.info(f'Lib prs: {entry_num}')
+
+
+def cal_external_q_pr(df):
+    dfx = df[(df['q_pr'] < 0.01) & (df['decoy'] == 0)].copy()
+    dfx['species'] = 'HUMAN'
+    dfx.loc[dfx['protein_name'].str.contains('ARATH'), 'species'] = 'ARATH'
+    dfx.loc[dfx['protein_name'].str.contains('HUMAN'), 'species'] = 'HUMAN'
+    external_fdr = sum(dfx['species'] == 'ARATH') / sum(dfx['species'] == 'HUMAN')
+    print(f'{len(dfx)}, external_fdr: {external_fdr:.4f}')
+
+
+
+def cross_cos(x):
+    norms = np.linalg.norm(x, axis=1) + 1e-6
+    normalized_x = x / norms[:, np.newaxis]
+    cosine_sim = np.dot(normalized_x, normalized_x.T)
+    return cosine_sim
+
+
+@jit(nopython=True, nogil=True, parallel=True)
+def interp_xics(xics, rts, target_dim):
+    '''
+    xics: [n_pep, n_ion, n_cycle]
+    rts: [n_pep, n_cycle]
+    result_xics: [n_pep, n_ion, target_dim]
+    result_rts: [n_pep, target_dim]
+    '''
+    n_pep, n_ion, n_cycle = xics.shape
+    result_xics = np.zeros((n_pep, n_ion, target_dim))
+    result_rts = np.zeros((n_pep, target_dim))
+    for i_pep in prange(n_pep):
+        rts_pep = rts[i_pep]
+        rts_interp = np.linspace(rts_pep[0], rts_pep[-1], target_dim)
+        result_rts[i_pep] = rts_interp
+        for i_ion in range(n_ion):
+            xic_raw = xics[i_pep, i_ion]
+            xic_interp = np.interp(rts_interp, rts_pep, xic_raw)
+            result_xics[i_pep, i_ion] = xic_interp
+    return result_rts, result_xics
+
