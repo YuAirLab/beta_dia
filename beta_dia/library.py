@@ -1,7 +1,8 @@
-import multiprocessing as mp
+import time
 import struct
 from pathlib import Path
-
+import multiprocessing as mp
+import pyarrow.parquet as pq
 import numpy as np
 import pandas as pd
 
@@ -383,26 +384,106 @@ def read_diann_speclib(file_path, worker_num):
 class Library():
 
     # @profile
-    def __init__(self, dir, worker_num):
-        print('Loading lib: ' + Path(dir).name)
-        (
-            version, name, fasta_name,
-            df_protein, df_protein_ids, df_seq, df_name, df_gene,
-            df_pr
-        ) = read_diann_speclib(dir, worker_num)
-        assert version == -8, '.speclib version is not -8!'
+    def __init__(self, dir_lib):
+        dir_lib = Path(dir_lib)
+        print('Loading lib: ' + dir_lib.name)
+        t0 = time.time()
+        self.lib_type = dir_lib.suffix
 
-        self.df_protein = df_protein
-        self.df_protein_ids = df_protein_ids
-        self.df_seq = df_seq
-        self.df_name = df_name
-        self.df_gene = df_gene
-        self.df_pr = df_pr
+        # parquet
+        if self.lib_type == '.parquet':
+            df = pq.read_pandas(dir_lib)
+            df = df.to_pandas()
+            assert (df['Fragment.Loss.Type'] == 'noloss').all()
 
-        info = 'FASTA from: {}, precursors in total: {}'.format(
-            fasta_name, len(df_pr)
-        )
-        # print(info)
+            self.df_pr, self.df_map = self.construct_parquet_dfs(df)
+
+        # speclib
+        if self.lib_type == '.speclib':
+            (
+                version, name, fasta_name,
+                df_protein, df_protein_ids, df_seq, df_name, df_gene,
+                df_pr
+            ) = read_diann_speclib(dir_lib, worker_num=1 if __debug__ else 8)
+            assert version == -8, '.speclib is not from DIA-NN-1.9/1.9.1!'
+
+            self.df_protein = df_protein
+            self.df_protein_ids = df_protein_ids
+            self.df_seq = df_seq
+            self.df_name = df_name
+            self.df_gene = df_gene
+            self.df_pr = df_pr
+
+        t1 = time.time()
+        print(f'Loading lib finished: {(t1 - t0):.3}s')
+
+    @profile
+    def construct_parquet_dfs(self, df):
+        x = ['Precursor.Id', 'Modified.Sequence', 'Stripped.Sequence',
+         'Precursor.Charge', 'Proteotypic', 'Decoy', 'N.Term', 'C.Term', 'RT',
+         'IM', 'Q.Value', 'Peptidoform.Q.Value', 'PTM.Site.Confidence',
+         'PG.Q.Value', 'Precursor.Mz', 'Product.Mz', 'Relative.Intensity',
+         'Fragment.Type', 'Fragment.Charge', 'Fragment.Series.Number',
+         'Fragment.Loss.Type', 'Exclude.From.Quant', 'Protein.Ids',
+         'Protein.Group', 'Protein.Names', 'Genes']
+
+        # info - pr
+        fg_height_v = df['Relative.Intensity'].values.astype(np.float32)
+        fg_height_max_idx = np.where(fg_height_v == fg_height_v.max())[0]
+        pr_id_v = df.loc[fg_height_max_idx, 'Precursor.Id'].values
+        pr_charge_v = df.loc[fg_height_max_idx, 'Precursor.Charge'].values
+        pr_mz_v = df.loc[fg_height_max_idx, 'Precursor.Mz'].values
+        pred_irt_v = df.loc[fg_height_max_idx, 'RT'].values
+        pred_iim_v = df.loc[fg_height_max_idx, 'IM'].values
+        pr_length_v = df.loc[fg_height_max_idx, 'Stripped.Sequence'].str.len().values
+
+        # info - fg
+        fg_num_v = np.diff(fg_height_max_idx)
+        fg_num_v = np.append(fg_num_v, len(df) - fg_height_max_idx[-1])
+        fg_mz_v = df['Product.Mz'].values.astype(np.float32)
+        fg_type_v = np.where(df['Fragment.Type'] == 'b', 1, 2)
+        fg_type_v = fg_type_v.astype(np.int16)  # b-1, y-2
+        fg_index_v = df['Fragment.Series.Number'].values.astype(np.int16)
+        fg_charge_v = df['Fragment.Charge'].values.astype(np.int16)
+        assert fg_charge_v.max() < 10
+        assert fg_index_v.max() < 100
+        fg_anno_v = fg_type_v * 1000 + fg_index_v * 10 + fg_charge_v
+        mask = np.arange(fg_num_v.max()) < fg_num_v[:, None]
+        fg_mz = np.zeros(mask.shape, dtype=np.float32)
+        fg_mz[mask] = fg_mz_v
+        fg_height = np.zeros(mask.shape, dtype=np.float32)
+        fg_height[mask] = fg_height_v
+        fg_anno = np.ones(mask.shape, dtype=np.int16) * 3011  # 3 is fg_loss
+        fg_anno[mask] = fg_anno_v
+
+        # df_map
+        protein_id_v = df.loc[fg_height_max_idx, 'Protein.Ids'].values
+        protein_name_v = df.loc[fg_height_max_idx, 'Protein.Names'].values
+        # pg_v = df.loc[fg_height_max_idx, 'Protein.Group'].values
+        gene_v = df.loc[fg_height_max_idx, 'Genes'].values
+        df_map = pd.DataFrame()
+        df_map['protein_id'] = protein_id_v
+        df_map['protein_name'] = protein_name_v
+        df_map['gene'] = gene_v
+
+        # df_pr
+        df_pr = pd.DataFrame()
+        df_pr['pr_id'] = pr_id_v
+        df_pr['pr_charge'] = pr_charge_v.astype(np.int8)
+        df_pr['pr_mz'] = pr_mz_v.astype(np.float32)
+        df_pr['pr_len'] = pr_length_v.astype(np.int8)
+        df_pr['pred_irt'] = pred_irt_v.astype(np.float32)
+        df_pr['pred_iim'] = pred_iim_v.astype(np.float32)
+        df_pr['fg_num'] = fg_num_v.astype(np.int8)
+        df_pr['pr_index'] = df_pr.index.values.astype(np.int32)
+        fg_num = fg_mz.shape[1]
+        df_pr[['fg_mz_' + str(i) for i in range(fg_num)]] = fg_mz
+        df_pr[['fg_height_' + str(i) for i in range(fg_num)]] = fg_height
+        df_pr[['fg_anno_' + str(i) for i in range(fg_num)]] = fg_anno
+
+        assert len(df_pr) == len(df_map)
+
+        return df_pr, df_map
 
     # @profile
     def polish_lib(self, swath, ws_diann=None):
@@ -481,20 +562,28 @@ class Library():
 
     def assign_proteins(self, df):
         # find corresponding protein and name by pr_index
-        df_map = self.df_protein_ids
+        if self.lib_type == '.parquet':
+            df_map = self.df_map
+            pr_index_q = df['pr_index'].values
+            result_protein_id = df_map.loc[pr_index_q, 'protein_id']
+            result_protein_name = df_map.loc[pr_index_q, 'protein_name']
 
-        pr_num = df_map['protein.ids.precursors'].apply(len)
-        protein_indices = np.repeat(df_map.index.values, pr_num)
-        pr_indices = df_map['protein.ids.precursors'].explode()
-        pr_indices = pr_indices.values
-        assert len(protein_indices) == len(pr_indices)
-        assert len(pr_indices) == len(np.unique(pr_indices))
+        if self.lib_type == '.speclib':
+            df_map = self.df_protein_ids
 
-        pr_to_prot = pd.Series(protein_indices, index=pr_indices)
-        query_idx = df['pr_index'].values
-        protein_rows = pr_to_prot[query_idx].values
-        result_protein_id = df_map.loc[protein_rows, 'protein.ids']
-        result_protein_name = df_map.loc[protein_rows, 'protein.ids.names']
+            pr_num = df_map['protein.ids.precursors'].apply(len)
+            protein_indices = np.repeat(df_map.index.values, pr_num)
+            pr_indices = df_map['protein.ids.precursors'].explode()
+            pr_indices = pr_indices.values
+            assert len(protein_indices) == len(pr_indices)
+            assert len(pr_indices) == len(np.unique(pr_indices))
+
+            pr_to_prot = pd.Series(protein_indices, index=pr_indices)
+            query_idx = df['pr_index'].values
+            protein_rows = pr_to_prot[query_idx].values
+            result_protein_id = df_map.loc[protein_rows, 'protein.ids']
+            result_protein_name = df_map.loc[protein_rows, 'protein.ids.names']
+
         df['protein_id'] = result_protein_id.values
         df['protein_name'] = result_protein_name.values
 

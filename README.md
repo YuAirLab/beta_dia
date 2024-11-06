@@ -132,3 +132,6 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**
   * FEAT: two methods (ascending or descending) to polish prs; remove left > center
 #### 0.6.0
   * FEAT: 5% method to polish dubilous prs, may less the ids
+#### 0.7.0
+  * FIX: polish dubious prs considering two more confident prs
+  * FEAT: support .parquet lib

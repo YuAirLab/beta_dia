@@ -30,6 +30,7 @@ setup(
         'scikit-learn',
         'scipy',
         'statsmodels',
+        'pyarrow',
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
