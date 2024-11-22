@@ -101,7 +101,7 @@ Most column names are consistent with DIA-NN and are self-explanatory.
 ---
 ## Citing Beta-DIA
 
-Check out: [**Beta-DIA: Beta-DIA: Integrating learning-based and function-based feature scores to
+Check out: [**Beta-DIA: Integrating learning-based and function-based feature scores to
 optimize the proteome profiling of diaPASEF mass spectrometry data**](https://www.biorxiv.org/content/10.1101/2024.11.19.624419v1.full.pdf)
 
 ---
