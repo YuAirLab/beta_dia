@@ -19,7 +19,7 @@ We recommend using [Conda](https://www.anaconda.com/) to create a Python environ
     conda activate beta_env
     ```
 
-2. Install the corresponding PyTorch and CuPy packages based on your CUDA version (which can be checked using the `nvidia-smi` command). Beta-DIA will fail on computers without a GPU.
+2. Install the corresponding PyTorch and CuPy packages based on your CUDA version (which can be checked using the `nvidia-smi` command). Beta-DIA requires GPUs with over 10 GB of VRAM to run.
   - CUDA-12
     ```bash
     pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
@@ -43,11 +43,11 @@ We recommend using [Conda](https://www.anaconda.com/) to create a Python environ
 ```bash
 beta_dia -lib "Absolute path of the spectral library" -ws "Absolute path of the .d folder or a folder containing multiple .d folders"
 ```
-(Please note that the path needs to be enclosed in quotes.)
+(Please note that the path needs to be enclosed in quotes if running on a Windows platform.)
 
 - `-lib`<br>
 This parameter is used to specify the absolute path of the spectral library.
-Beta-DIA currently supports the spectral library with the suffix .speclib predicted by DIA-NN (>=v1.9). 
+Beta-DIA currently supports the spectral library with the suffix .speclib predicted by DIA-NN (v1.9 and v1.9.1) or .parquet produced by DIA-NN (>= v1.9). 
 It supports oxygen modifications on methionine (M) but does not include modifications such as phosphorylation or acetylation. 
 Refer to [this](https://github.com/vdemichev/DiaNN) for instructions on how to generate prediction spectral libraries using DIA-NN. 
 Beta-DIA will develop its own predictor capable of forecasting the peptide retention time, ion mobility, and fragmentation pattern. 
@@ -61,14 +61,15 @@ Other optional params are list below by entering `beta_dia -h`:
        ******************
        * Beta-DIA x.y.z *
        ******************
-Usage: beta_dia [-h] -ws WS -lib LIB [-out_name OUT_NAME] [-gpu_id GPU_ID]
+Usage: beta_dia -ws WS -lib LIB
 
-optional arguments:
-  -h, --help          show this help message and exit
-  -ws WS              specify the folder that is .d or contains .d files.
-  -lib LIB            specify the absolute path of a .speclib spectra library.
-  -out_name OUT_NAME  specify the folder name of outputs. Default: beta_dia.
-  -gpu_id GPU_ID      specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0.
+optional arguments for users:
+  -h, --help           Show this help message and exit.
+  -ws WS               Specify the folder that is .d or contains .d files.
+  -lib LIB             Specify the absolute path of a .speclib or .parquet spectra library.
+  -out_name OUT_NAME   Specify the folder name of outputs. Default: beta_dia.
+  -gpu_id GPU_ID       Specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0.
+  -start_idx START_IDX Specify from which file the analysis should restart. Default: 0.
 ```
 
 ### Output
@@ -100,8 +101,8 @@ Most column names are consistent with DIA-NN and are self-explanatory.
 ---
 ## Citing Beta-DIA
 
-Check out: **Beta-DIA: Beta-DIA: Integrating learning-based and function-based feature scores to
-optimize the proteome profiling of diaPASEF mass spectrometry data**
+Check out: [**Beta-DIA: Beta-DIA: Integrating learning-based and function-based feature scores to
+optimize the proteome profiling of diaPASEF mass spectrometry data**](https://www.biorxiv.org/content/10.1101/2024.11.19.624419v1.full.pdf)
 
 ---
 ## Changelog
