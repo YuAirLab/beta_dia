@@ -38,7 +38,7 @@ def extract_map_by_compare(df_top, ms):
         df_swath = df_target[df_target['swath_id'] == swath_id]
         df_swath = df_swath.reset_index(drop=True)
 
-        # 当前map_gpu
+        # map_gpu
         ms1_profile, ms2_profile = ms.copy_map_to_gpu(swath_id, centroid=False)
         ms1_centroid, ms2_centroid = ms.copy_map_to_gpu(swath_id, centroid=True)
         N = 10000

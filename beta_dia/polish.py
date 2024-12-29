@@ -68,7 +68,7 @@ def polish_prs(df_input, tol_im, tol_ppm, tol_sa_ratio, tol_share_num):
     '''
     assert df_input['group_rank'].max() == 1
     # target_good_idx = (df_input['decoy'] == 0) & (df_input['q_pr'] < 0.05)
-    target_good_idx = df_input['decoy'] == 0
+    target_good_idx = (df_input['decoy'] == 0) & (df_input['is_main'])
 
     df_target = df_input[target_good_idx].reset_index(drop=True)
     df_other = df_input[~target_good_idx]
@@ -117,15 +117,15 @@ def polish_prs(df_input, tol_im, tol_ppm, tol_sa_ratio, tol_share_num):
     good_condition1 = nonshare_ratio > tol_sa_ratio
     good_condition2 = (fg_mz_m_raw > fg_mz_m).sum(axis=1) < tol_share_num
     good_idx = good_condition1 & good_condition2
-    df_target = df_target[good_idx].reset_index(drop=True)
+    df_target.loc[~good_idx, 'is_main'] = False
 
     polish_bad_num = len(good_idx) - sum(good_idx)
-    info = 'Removing dubious target prs in 5%-FDR: {}-{}-{}={}'.format(
-        target_num_before, polish_IL_num, polish_bad_num, len(df_target)
+    info = 'Removing dubious target prs: {}-{}-{}={}'.format(
+        target_num_before, polish_IL_num, polish_bad_num, df_target['is_main'].sum()
     )
     logger.info(info)
 
     df = pd.concat([df_target, df_other], ignore_index=True)
-    utils.cal_acc_recall(param_g.ws, df[df['decoy'] == 0], diann_q_pr=0.01)
+    utils.cal_acc_recall(param_g.ws_single, df[df['decoy'] == 0], diann_q_pr=0.01)
 
     return df

@@ -1,12 +1,11 @@
 is_compare_mode = False
 is_time_log = False
-is_save_pkl = False
 
 is_save_final = True
 
 # placeholder
-ws = None
-dir_out = None
+dir_out_global = None
+dir_out_single = None
 multi_ws = None
 file_num = None
 tol_rt = None # second
@@ -18,7 +17,7 @@ tol_rt_ratio = 1/15
 locus_valid_num = 3.5
 # seek locus
 top_sa_cut, top_deep_cut = 0.75, 0.75
-# batch size max for targets
+# batch size max for targets; when low memory mode, it's 150000
 target_batch_max = 450000
 # batch q cut
 rubbish_q_cut = 0.5
@@ -42,6 +41,10 @@ window_points = 7 # SA only using 7 cycles.
 
 # deepmap retrain or deepmall train
 patient = 5
+
+# global
+top_k_fg = 4 # select top_k_fg ions for cross quantification of precursors
+top_k_pr = 2 # select top_k_pr prs for protein quantification
 
 g_aa_to_mass = {'A': 89.0476792233, 'C': 160.030644505, 'D': 133.0375092233,
                 'E': 147.05315928710002,

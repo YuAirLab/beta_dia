@@ -46,8 +46,8 @@ def update_info_rt(df_seed, df_lib):
     idx = np.argsort(x)
     x0 = x[idx]
     y0 = y[idx]
-    if param_g.is_save_pkl:
-        np.savez(param_g.dir_out / 'update_rt.npz', x=x, y=y)
+    if param_g.is_compare_mode:
+        np.savez(param_g.dir_out_single / 'update_rt.npz', x=x, y=y)
 
     # Calib-RT
     x1, y1, _ = screen_by_hist(x0, y0, bins=100)
@@ -68,12 +68,13 @@ def update_info_rt(df_seed, df_lib):
     f = interp1d(x_fit, y_fit, kind='cubic', fill_value='extrapolate')
 
     # tol is for df_seed, tol_rt is for global extraction
-    tol = cal_turning_point(y0, f(x0))
-    info = 'tol_rt, by_ratio: {:.2f}, by seed: {:.2f}, final: {:.2f}'.format(
-        param_g.tol_rt, tol, max(param_g.tol_rt, tol)
+    tol_turn = cal_turning_point(y0, f(x0))
+    tol_ratio = param_g.tol_rt
+    param_g.tol_rt = max(tol_ratio, tol_turn)
+    info = 'tol_rt, by ratio: {:.2f}, by seed: {:.2f}, final: {:.2f}'.format(
+        tol_ratio, tol_turn, param_g.tol_rt
     )
     logger.info(info)
-    param_g.tol_rt = max(param_g.tol_rt, tol)
 
     # pred and screen for df_seed
     x_new = df['pred_irt'].values
@@ -89,7 +90,7 @@ def update_info_rt(df_seed, df_lib):
         len(df)
     )
     logger.info(info)
-    utils.cal_acc_recall(param_g.ws, df, diann_q_pr=0.01)
+    utils.cal_acc_recall(param_g.ws_single, df, diann_q_pr=0.01)
 
     # pred for df_lib
     x_new = df_lib['pred_irt'].values
@@ -97,7 +98,7 @@ def update_info_rt(df_seed, df_lib):
     y_new[y_new < 0.] = 0.
     df_lib['pred_rt'] = y_new
 
-    if param_g.is_save_pkl:
+    if param_g.is_compare_mode:
         plot_fit_rt(x, y,
                     x1, y1,
                     x11, y11,
@@ -106,7 +107,7 @@ def update_info_rt(df_seed, df_lib):
                     bias,
                     fname='update_info_rt')
 
-    cal_rt_recall(param_g.ws, df_lib, param_g.tol_rt)
+    cal_rt_recall(param_g.ws_single, df_lib, param_g.tol_rt)
 
     return df, df_lib
 
@@ -121,8 +122,8 @@ def update_info_im(df_tol, df_lib):
     Returns:
         df_lib
     '''
-    cal_im_recall(param_g.ws, df_lib, param_g.tol_im_xic)
-    cal_rt_im_recall(param_g.ws, df_lib, param_g.tol_rt, param_g.tol_im_xic)
+    cal_im_recall(param_g.ws_single, df_lib, param_g.tol_im_xic)
+    cal_rt_im_recall(param_g.ws_single, df_lib, param_g.tol_rt, param_g.tol_im_xic)
 
     idx_max = df_tol.groupby('pred_iim')['score_deep'].idxmax()
     df_tol = df_tol.loc[idx_max].reset_index(drop=True)
@@ -173,15 +174,15 @@ def update_info_im(df_tol, df_lib):
     pred_ims = f(df_lib['pred_iim'].values).astype(np.float32)
     df_lib['pred_im'] = pred_ims
 
-    if param_g.is_save_pkl:
+    if param_g.is_compare_mode:
         plot_fit_im(y_measure_good,
                     y_pred_before, y_pred_after,
                     x_fit, y_fit,
                     bias_before, bias_after,
                     fname='update_info_im')
 
-    cal_im_recall(param_g.ws, df_lib, param_g.tol_im_xic)
-    cal_rt_im_recall(param_g.ws, df_lib, param_g.tol_rt, param_g.tol_im_xic)
+    cal_im_recall(param_g.ws_single, df_lib, param_g.tol_im_xic)
+    cal_rt_im_recall(param_g.ws_single, df_lib, param_g.tol_rt, param_g.tol_im_xic)
 
     return df_tol, df_lib
 
@@ -231,7 +232,7 @@ def update_info_mz(df_seed, ms):
     # logger.info(info)
     logger.info('Keep tol_ppm: 20')
 
-    if param_g.is_save_pkl:
+    if param_g.is_compare_mode:
         plot_fit_mz(x_good, y_good,
                     y_pred, y_good,
                     x_fit, y_fit,
@@ -415,7 +416,7 @@ def plot_fit_rt(x, y, x1, y1, x11, y11, x_fit, y_fit,
     for a in ax:
         a.legend()
     plt.tight_layout()
-    plt.savefig(param_g.dir_out / (fname + '.png'), bbox_inches='tight')
+    plt.savefig(param_g.dir_out_single / (fname + '.png'), bbox_inches='tight')
 
 
 def plot_fit_im(y_measure, y_pred_before, y_pred_after,
@@ -461,7 +462,7 @@ def plot_fit_im(y_measure, y_pred_before, y_pred_after,
 
     # plt.legend()
     plt.tight_layout()
-    plt.savefig(param_g.dir_out / (fname + '.png'), bbox_inches='tight')
+    plt.savefig(param_g.dir_out_single / (fname + '.png'), bbox_inches='tight')
 
 
 def plot_fit_mz(x1, y1, x2, y2, x_fit, y_fit, bias_old, bias, fname):
@@ -503,7 +504,7 @@ def plot_fit_mz(x1, y1, x2, y2, x_fit, y_fit, bias_old, bias, fname):
 
     # plt.legend()
     plt.tight_layout()
-    plt.savefig(param_g.dir_out / (fname + '.png'), bbox_inches='tight')
+    plt.savefig(param_g.dir_out_single / (fname + '.png'), bbox_inches='tight')
 
 
 def cal_rt_recall(ws, df_lib, tol_rt):

@@ -714,6 +714,6 @@ def update_scores(df, ms, model_center, model_big, model_mall):
         )
 
     df = pd.concat(df_good, axis=0, ignore_index=True)
-    utils.cal_acc_recall(param_g.ws, df[df['decoy'] == 0], diann_q_pr=0.01)
+    utils.cal_acc_recall(param_g.ws_single, df[df['decoy'] == 0], diann_q_pr=0.01)
 
     return df

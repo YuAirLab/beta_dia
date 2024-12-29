@@ -168,6 +168,7 @@ def make_decoys(df_target, fg_num, method, value=1):
     ModifiedPeptide = df_decoy['simple_seq'].replace(
         ['c', 'm'], ['C(UniMod:4)', 'M(UniMod:35)'], regex=True)
     df_decoy['pr_id'] = ModifiedPeptide + df_decoy['pr_charge'].astype(str)
+    df_decoy['pr_root'] = df_target['pr_id']
 
     # drop duplicates and mismatch to target seqs
     df_decoy = df_decoy.drop_duplicates(subset='pr_id').reset_index(drop=True)

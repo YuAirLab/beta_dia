@@ -1,5 +1,6 @@
 import argparse
-import gc
+import pyarrow as pa
+import pyarrow.parquet as pq
 import warnings
 from pathlib import Path
 
@@ -196,13 +197,24 @@ def cal_acc_recall(path_ws, df_input,
 
 
 def save_as_pkl(df, fname):
-    if param_g.is_save_pkl:
-        df.to_pickle(param_g.dir_out / fname)
+    if param_g.is_compare_mode:
+        df.to_pickle(param_g.dir_out_single / fname)
 
 
-def save_as_tsv(df, fname):
-    if param_g.is_save_final:
-        df.to_csv(param_g.dir_out / fname, sep='\t', index=False)
+def save_as_pq(df, ws_single):
+    score_col = df.columns.str.startswith('score_')
+    table = pa.Table.from_pandas(df.loc[:, ~score_col])
+    output_file = param_g.dir_out_global/(ws_single.name + '.parquet')
+    pq.write_table(table, output_file)
+
+
+def read_from_pq(ws_single, cols=None):
+    fname = param_g.dir_out_global / (ws_single.name + '.parquet')
+    if cols is None:
+        df = pq.read_pandas(fname).to_pandas()
+    else:
+        df = pq.read_pandas(fname, columns=cols).to_pandas()
+    return df
 
 
 @jit(nopython=True, nogil=True, parallel=True)
@@ -243,28 +255,49 @@ def cal_sa_by_np(x, y):
     return sa
 
 
-def convert_cols_to_diann(df):
-    df = df.rename(columns={'protein_group': 'Protein.Group',
-                            'protein_id': 'Protein.Ids',
-                            'protein_name': 'Protein.Names',
-                            'quant_pg': 'PG.Quantity',
-                            'pr_id': 'Precursor.Id',
-                            'pr_charge': 'Precursor.Charge',
-                            'q_pr': 'Q.Value',
-                            'q_pro': 'Protein.Q.Value',
-                            'q_pg': 'PG.Q.Value',
-                            'proteotypic': 'Proteotypic',
-                            'quant_pr': 'Precursor.Quantity',
-                            'measure_rt': 'RT',
-                            'cscore_pr': 'CScore',
-                            'cscore_pg': 'CScore.PG',
-                            'measure_im': 'IM'})
-    df = df[['Protein.Group', 'Protein.Ids', 'Protein.Names', 'PG.Quantity',
-             'Precursor.Id', 'Precursor.Charge', 'Q.Value', 'Protein.Q.Value',
-             'PG.Q.Value', 'Proteotypic', 'Precursor.Quantity', 'RT',
-             'CScore', 'IM', 'CScore.PG'
-             ]]
+def convert_cols_to_diann(df, ws_single):
+    df['file_name'] = '/'.join(ws_single.parts[-2:])
+    df['run'] = ws_single.stem
 
+    cols_quant = ['fg_quant_' + str(i) for i in range(param_g.fg_num)]
+    tmp = np.round(df[cols_quant].values, 2).astype(str)
+    df['fgs_quant'] = [';'.join(row) for row in tmp]
+
+    cols_sa = ['fg_sa_' + str(i) for i in range(param_g.fg_num)]
+    tmp = np.round(df[cols_sa].values, 2).astype(str)
+    df['fgs_sa'] = [';'.join(row) for row in tmp]
+
+    df = df.rename(columns={
+        'file_name': 'File.Name',
+        'run': 'Run',
+        'protein_group': 'Protein.Group',
+        'protein_id': 'Protein.Ids',
+        'protein_name': 'Protein.Names',
+        'quant_pg': 'PG.Quantity',
+        'pr_id': 'Precursor.Id',
+        'pr_charge': 'Precursor.Charge',
+        'q_pr': 'Q.Value',
+        'q_pr_global': 'Global.Q.Value',
+        'q_pg': 'PG.Q.Value',
+        'q_pg_global': 'Global.PG.Q.Value',
+        'proteotypic': 'Proteotypic',
+        'quant_pr': 'Precursor.Quantity',
+        'measure_rt': 'RT',
+        'fgs_sa': 'Fragment.Correlations',
+        'fgs_quant': 'Fragment.Quant.Raw',
+        'cscore_pr': 'CScore',
+        'measure_im': 'IM',
+    })
+    df = df[[
+        'File.Name', 'Run',
+        # PG
+        'Protein.Group', 'Protein.Ids', 'Protein.Names',
+        'PG.Q.Value', 'Global.PG.Q.Value', 'PG.Quantity',
+        # Pr
+        'Precursor.Id', 'Precursor.Charge', 'Proteotypic',
+        'Q.Value', 'Global.Q.Value', 'Precursor.Quantity', 'CScore',
+        'Fragment.Quant.Raw', 'Fragment.Correlations', 'RT', 'IM'
+    ]]
     return df
 
 
@@ -279,7 +312,7 @@ def get_args():
     # required=True
     parser.add_argument(
         '-ws', required=True,
-        help='Specify the folder that is .d or contains .d files.'
+        help='Specify the folder that contains .d files.'
     )
     parser.add_argument(
         '-lib', required=True,
@@ -296,21 +329,21 @@ def get_args():
         help='Specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0'
     )
     parser.add_argument(
-        '-start_idx', type=int, default=0,
-        help='Specify from which file the analysis should start. Default: 0'
+        '-low_memory', action='store_true',
+        help='Specify whether running in low memory mode. Default: False'
     )
-
     # develop
     parser.add_argument(
-        '-save_pkl', action='store_true',
+        '-compare', action='store_true',
         help='Developing use. Default: False'
     )
 
     # process params
     args = parser.parse_args()
     init_gpu_params(args.gpu_id)
-    param_g.is_save_pkl = args.save_pkl
-    param_g.start_idx = args.start_idx - 1
+    param_g.is_compare_mode = args.compare
+    if args.low_memory:
+        param_g.target_batch_max = 150000
 
     return Path(args.ws), Path(args.lib), args.out_name
 
@@ -338,35 +371,39 @@ def init_gpu_params(gpu_id):
         param_g.batch_deep_big = 2000
 
 
-def init_multi_ws(ws):
+def init_multi_ws(ws_global, out_name):
+    # output for global
+    param_g.ws_global = ws_global
+    param_g.dir_out_global = (ws_global / out_name)
+    param_g.dir_out_global.mkdir(exist_ok=True)
+    Logger.set_logger(param_g.dir_out_global, is_time_name=param_g.is_time_log)
+
     # GPU memory has to be larger than 10G!
     total_memory = torch.cuda.get_device_properties(0).total_memory
     if total_memory / 1024 ** 3 < 10:
-        print('GPU memory is less than 10G. Beta-DIA may crash!')
+        logger.warning('GPU memory is less than 10G. Beta-DIA may crash!')
 
     multi_ws = []
-    if ws.suffix == '.d':
-        multi_ws.append(ws)
-    else:
-        for ws_i in ws.rglob('*.d'):
-            if ws_i.is_dir():
-                multi_ws.append(ws_i)
+    for ws_i in ws_global.rglob('*.d'):
+        if ws_i.is_dir():
+            multi_ws.append(ws_i)
     param_g.multi_ws = multi_ws
     param_g.file_num = len(param_g.multi_ws)
 
-    i = 'The specified ws does not end with .d or does not contain a .d folder.'
-    if param_g.file_num == 0:
-        print(i)
+    info = 'The number of .d files contained in specified ws is less than 2!'
+    if param_g.file_num < 2:
+        logger.warning(info)
 
 
-def init_single_ws(ws_i, total, ws, out_name, dir_lib, entry_num):
-    param_g.ws = ws
-    param_g.dir_out = (ws / out_name)
-    param_g.dir_out.mkdir(exist_ok=True)
-    Logger.set_logger(param_g.dir_out, is_time_name=param_g.is_time_log)
+def init_single_ws(ws_i, total, ws_single, out_name, dir_lib, entry_num):
+    param_g.ws_single = ws_single
+    param_g.dir_out_single = (ws_single / out_name)
+    if param_g.is_compare_mode:
+        param_g.dir_out_global.mkdir(exist_ok=True)
+
     logger.info(f'====================={ws_i+1}/{total}=====================')
     logger.info(f'Beta-DIA v{__version__}')
-    logger.info('.d: ' + str(ws.name))
+    logger.info('.d: ' + str(ws_single.name))
     logger.info('Lib: ' + Path(dir_lib).name)
     logger.info(f'Lib prs: {entry_num}')
 
@@ -409,3 +446,30 @@ def interp_xics(xics, rts, target_dim):
             result_xics[i_pep, i_ion] = xic_interp
     return result_rts, result_xics
 
+
+def print_ids(df, q_cut, level='pr'):
+    if level == 'pr':
+        ids = []
+        for q_pr in [0.01, q_cut]:
+            df_sub = df[(df['q_pr'] <= q_pr)]
+            if 'is_main' in df_sub.columns:
+                df_sub = df_sub[(df_sub['decoy'] == 0) & df_sub['is_main']]
+            else:
+                df_sub = df_sub[(df_sub['decoy'] == 0)]
+            ids.append(df_sub.pr_id.nunique())
+            if param_g.is_compare_mode:
+                cal_acc_recall(param_g.ws_single, df_sub, diann_q_pr=0.01)
+        info = 'Precusor Ids at FDR:      {}-0.01, {}-0.05'.format(ids[0], ids[1])
+        logger.info(info)
+
+    if level == 'pg':
+        ids = []
+        for q_pg in [0.01, q_cut]:
+            df_sub = df[(df['q_pg'] <= q_pg)]
+            if 'is_main' in df_sub.columns:
+                df_sub = df_sub[(df_sub['decoy'] == 0) & df_sub['is_main']]
+            else:
+                df_sub = df_sub[(df_sub['decoy'] == 0)]
+            ids.append(df_sub['protein_group'].nunique())
+        info = 'Protein Group Ids at FDR: {}-0.01, {}-0.05'.format(ids[0], ids[1])
+        logger.info(info)

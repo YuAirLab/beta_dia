@@ -1,6 +1,6 @@
 # Beta-DIA
 
-Beta-DIA is a partially open-source, free-to-use Python software that provides comprehensive peptide/protein identification and accurate quantification results for single-shot diaPASEF data.
+Beta-DIA is a partially open-source, free-to-use Python software that provides comprehensive peptide/protein identification and accurate quantification results for diaPASEF data.
 
 ---
 ### Contents
@@ -69,12 +69,11 @@ optional arguments for users:
   -lib LIB             Specify the absolute path of a .speclib or .parquet spectra library.
   -out_name OUT_NAME   Specify the folder name of outputs. Default: beta_dia.
   -gpu_id GPU_ID       Specify the GPU-ID (e.g. 0, 1, 2) which will be used. Default: 0.
-  -start_idx START_IDX Specify from which file the analysis should restart. Default: 0.
 ```
 
 ### Output
-Beta-DIA will generate **`beta_dia/report_beta.log.txt`** and **`beta_dia/report_beta.tsv`** in each .d folder. 
-The report_beta.tsv contains precursor and protein IDs, as well as plenty of associated information. 
+Beta-DIA will generate **`beta_dia/report_beta.log.txt`** and **`beta_dia/report.tsv`** in output folder. 
+The report.tsv contains precursor and protein IDs, as well as plenty of associated information. 
 Most column names are consistent with DIA-NN and are self-explanatory.
 
 * **Protein.Group** - inferred proteins. Beta-DIA uses [IDPicker](https://pubs.acs.org/doi/abs/10.1021/pr070230d) algorithm to infer proteins. 
@@ -84,8 +83,10 @@ Most column names are consistent with DIA-NN and are self-explanatory.
 * **Precursor.Id** peptide seq + precursor charge.
 * **Precursor.Charge** the charge of precursor.
 * **Q.Value** run-specific precursor q-value.
+* **Global.Q.Value** global precursor q-value.
 * **Protein.Q.Value** run-specific q-value for the unique protein, that is protein identified with proteotypic (=specific to it) peptides.
 * **PG.Q.Value** run-specific q-value for the protein group.
+* **Global.PG.Q.Value** global q-value for the protein group.
 * **Proteotypic** indicates the peptide is specific to a protein.
 * **Precursor.Quantity** quantity of the precursor.
 * **RT** the retention time of the precursor.
@@ -136,3 +137,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**](https://ww
 #### 0.7.0
   * FIX: polish dubious prs considering two more confident prs
   * FEAT: support .parquet lib
+#### 0.8.0
+  * FEAT: Support MBR as the default run mode

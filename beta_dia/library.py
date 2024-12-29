@@ -386,7 +386,7 @@ class Library():
     # @profile
     def __init__(self, dir_lib):
         dir_lib = Path(dir_lib)
-        print('Loading lib: ' + dir_lib.name)
+        logger.info('Loading lib: ' + dir_lib.name)
         t0 = time.time()
         self.lib_type = dir_lib.suffix
 
@@ -414,8 +414,13 @@ class Library():
             self.df_gene = df_gene
             self.df_pr = df_pr
 
+        assert len(self.df_pr) == self.df_pr['pr_id'].nunique()
+
         t1 = time.time()
-        print(f'Loading lib finished: {(t1 - t0):.3}s')
+        logger.info(f'Loading lib finished: {(t1 - t0):.3}s')
+
+    def __len__(self):
+        return len(self.df_pr)
 
     @profile
     def construct_parquet_dfs(self, df):
@@ -429,7 +434,12 @@ class Library():
 
         # info - pr
         fg_height_v = df['Relative.Intensity'].values.astype(np.float32)
+
         fg_height_max_idx = np.where(fg_height_v == fg_height_v.max())[0]
+        pr_id_v = df.loc[fg_height_max_idx, 'Precursor.Id']
+        good_idx = ~pr_id_v.duplicated() # for case: 1., 1., 0.8
+        fg_height_max_idx = fg_height_max_idx[good_idx]
+
         pr_id_v = df.loc[fg_height_max_idx, 'Precursor.Id'].values
         pr_charge_v = df.loc[fg_height_max_idx, 'Precursor.Charge'].values
         pr_mz_v = df.loc[fg_height_max_idx, 'Precursor.Mz'].values
@@ -486,7 +496,7 @@ class Library():
         return df_pr, df_map
 
     # @profile
-    def polish_lib(self, swath, ws_diann=None):
+    def polish_lib_by_swath(self, swath, ws_diann=None):
         df_lib = self.df_pr
 
         # for debug
@@ -559,6 +569,9 @@ class Library():
         logger.info('Polishing spectral library finished.')
 
         return df_lib
+
+    def polish_lib_by_targets(self, pr_targets):
+        self.df_pr = self.df_pr[self.df_pr['pr_id'].isin(pr_targets)]
 
     def assign_proteins(self, df):
         # find corresponding protein and name by pr_index
