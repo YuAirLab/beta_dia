@@ -152,7 +152,7 @@ def cal_q_pg_prod(df_input, q_pr_cut):
     return df
 
 
-def cal_q_pg_after_cross(df_input, lib, q_pr_cut):
+def cal_q_pg_after_cross(df_input, q_pr_cut):
     '''
     for protein group q value calculation with IDPicker
     In reanalysis, the targets already have done the assign and q_pg_global
@@ -163,7 +163,7 @@ def cal_q_pg_after_cross(df_input, lib, q_pr_cut):
     idx_max = df_pep_score.groupby(['strip_seq'])['cscore_pr'].idxmax()
     df_pep_score = df_pep_score.loc[idx_max].reset_index(drop=True)
 
-    # target: first assign, then score
+    # target
     df_target = df_input[(df_input['decoy'] == 0) &
                          (df_input['q_pr'] < q_pr_cut)].copy()
     df_target = df_target[['strip_seq', 'protein_group']]
@@ -179,8 +179,6 @@ def cal_q_pg_after_cross(df_input, lib, q_pr_cut):
     # decoy
     df_decoy = df_input[(df_input['decoy'] == 1) &
                          (df_input['q_pr'] < q_pr_cut)].copy()
-    df_decoy = lib.assign_proteins(df_decoy)
-    df_decoy = assign_pep_to_pg(df_decoy)
 
     df_decoy = df_decoy[['strip_seq', 'protein_group']]
     df_decoy = df_decoy.merge(df_pep_score, on='strip_seq')

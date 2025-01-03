@@ -56,16 +56,14 @@ def drop_runs_mismatch(df):
     return df
 
 
-def get_global(multi_ws, lib, top_k_fg):
+def get_global_first(multi_ws, top_k_fg):
     '''
     A few items that this function will done:
-    1. generate global df: [pr_id, decoy, cscore_pr_global, q_pr_global, strip_seq]
-    2. assign prs to pro: [protein_group]
-    3. cal q_pg_global: [q_pg_global]
-    4. cross quant for pr: [quant_pr]
+    1. generate prs_limit: q_pr_global_first < 0.05
+    2. generate df_cscore as the bank of the raw cscores
+    3. generate df_quant as the bank pr quant: [quant_pr]
     Returns:
-        df_global: global information, only targets, pr_id is unique
-                   [pr_id, pg, cscore_pr/pg_global, q_pr/pg_global]
+        prs_limit: only targets, pr_id is unique, Series
         df_cscore: for reanalysis, pr_id is not unique to cover each runs
                    [pr_id, decoy, cscore-0, ..., cscore-N]
         df_quant: pr_quant for each pr (targets in 5%) in each run
@@ -117,13 +115,62 @@ def get_global(multi_ws, lib, top_k_fg):
     df_global = drop_runs_mismatch(df_global)
     df_global = fdr.cal_q_pr_core(df_global, 'cscore_pr')
 
-    logger.info(f'Merge {len(multi_ws)} .parquet files resulting in: ')
+    logger.info(f'Merge {len(multi_ws)} .parquet files resulting in first global: ')
+    utils.print_ids(df_global, 0.05)
+
+    condition1 = df_global['q_pr'] < 0.05
+    condition2 = df_global['decoy'] == 0
+    prs_limit = df_global[condition1 & condition2]['pr_id']
+
+    # cross quant
+    df_quant = quant_pr_cross(prs_limit, df_quant_v, top_k_fg)
+
+    return prs_limit, df_cscore, df_quant
+
+
+def get_global_second(df_v, lib):
+    '''
+    Generate df_global whose prs have all the cscore_global and q_global
+    Args:
+        df_v: df is the reanalyzed result for each run
+        lib: used for the assign of pep to protein
+
+    Returns:
+        df_global: [
+            'pr_id', 'proteotypic', 'decoy',
+            'protein_id', 'protein_name', 'protein_group',
+            'cscore_pr_global', 'q_pr_global',
+            'cscore_pg_global', 'q_pg_global'
+        ]
+    '''
+    df_global_v = []
+    for i, df in enumerate(df_v):
+        df = df[['pr_id', 'simple_seq', 'decoy', 'pr_index', 'cscore_pr']]
+        df = df.rename(columns={'cscore_pr': 'score_cscore_' + str(i)})
+        df_global_v.append(df)
+
+    # cal q_pr_global by maximum cscore method
+    df_global = reduce(
+        lambda x, y: pd.merge(
+            x, y,
+            on=['pr_id', 'simple_seq', 'decoy', 'pr_index'],
+            how='outer'
+        ),
+        df_global_v
+    )
+    df_global = df_global.fillna(0.)
+    cscore_cols = df_global.columns.str.startswith('score_cscore_')
+    df_global['cscore_pr'] = df_global.loc[:, cscore_cols].max(axis=1)
+    df_global = drop_runs_mismatch(df_global)
+    df_global = fdr.cal_q_pr_core(df_global, 'cscore_pr')
+
+    logger.info(f'Merge reanalysis results resulting in second global: ')
     utils.print_ids(df_global, 0.05)
 
     # assign and q value for protein group
     df_global = lib.assign_proteins(df_global)
     df_global['strip_seq'] = df_global['simple_seq'].str.upper()
-    df_global = fdr.cal_q_pg_prod(df_global, 0.05)
+    df_global = fdr.cal_q_pg_prod(df_global, param_g.q_cut_infer)
     utils.print_ids(df_global, 0.05, level='pg')
 
     # rename df_global
@@ -133,22 +180,17 @@ def get_global(multi_ws, lib, top_k_fg):
         'cscore_pr': 'cscore_pr_global',
         'cscore_pg': 'cscore_pg_global',
     })
-    df_global = df_global[df_global['decoy'] == 0]
-    cols = ['pr_id', 'proteotypic',
+    cols = ['pr_id', 'proteotypic', 'decoy',
             'protein_id', 'protein_name', 'protein_group',
             'cscore_pr_global', 'q_pr_global',
             'cscore_pg_global', 'q_pg_global']
     df_global = df_global[cols].reset_index(drop=True)
 
-    # cross quant
-    df_quant = quant_pr_cross(df_global, df_quant_v, top_k_fg)
-
-    return df_global, df_cscore, df_quant
+    return df_global
 
 
-def quant_pr_cross(df_global, df_quant_v, top_k_fg):
+def quant_pr_cross(prs_target, df_quant_v, top_k_fg):
     # df_global, only targets, pr_id is unique
-    prs_target = df_global[(df_global['q_pr_global'] < 0.05)]['pr_id']
     assert prs_target.nunique() == len(prs_target)
 
     sa_m_v, area_m_v = [], []

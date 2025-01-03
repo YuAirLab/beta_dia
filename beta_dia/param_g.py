@@ -1,8 +1,6 @@
 is_compare_mode = False
 is_time_log = False
 
-is_save_final = True
-
 # placeholder
 dir_out_global = None
 dir_out_single = None
@@ -45,6 +43,7 @@ patient = 5
 # global
 top_k_fg = 4 # select top_k_fg ions for cross quantification of precursors
 top_k_pr = 2 # select top_k_pr prs for protein quantification
+q_cut_infer = 0.05 # which prs will be used for protein group infer
 
 g_aa_to_mass = {'A': 89.0476792233, 'C': 160.030644505, 'D': 133.0375092233,
                 'E': 147.05315928710002,

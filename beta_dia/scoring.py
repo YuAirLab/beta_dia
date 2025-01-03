@@ -648,7 +648,9 @@ def update_scores(df, ms, model_center, model_big, model_mall):
         ms1_profile, ms2_profile = ms.copy_map_to_gpu(swath_id, centroid=False)
         ms1_centroid, ms2_centroid = ms.copy_map_to_gpu(swath_id, centroid=True)
 
-        for batch_idx, df_batch in df_swath.groupby(df_swath.index // 2000):
+        batch_n = param_g.batch_deep_big
+
+        for batch_idx, df_batch in df_swath.groupby(df_swath.index // batch_n):
             df_batch = df_batch.reset_index(drop=True)
             # deepmap-refined scores without feature
             scores_deep_v, _ = deepmap.extract_scoring_big(

@@ -111,7 +111,9 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
     return rts, xics, sas
 
 
-def quant_fg_ions(df, ms):
+def quant_fg_ions(df_input, ms):
+    df = df_input[df_input['decoy'] == 0]
+    df_decoy = df_input[df_input['decoy'] == 1]
     df_good = []
     for swath_id in df['swath_id'].unique():
         df_swath = df[df['swath_id'] == swath_id]
@@ -146,6 +148,7 @@ def quant_fg_ions(df, ms):
             df_good.append(df_batch)
         utils.release_gpu_scans(ms1_centroid, ms2_centroid)
     df = pd.concat(df_good, axis=0, ignore_index=True)
+    df = pd.concat([df, df_decoy], axis=0, ignore_index=True)
     return df
 
 

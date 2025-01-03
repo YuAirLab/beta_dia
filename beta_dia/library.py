@@ -415,9 +415,7 @@ class Library():
             self.df_pr = df_pr
 
         assert len(self.df_pr) == self.df_pr['pr_id'].nunique()
-
-        t1 = time.time()
-        logger.info(f'Loading lib finished: {(t1 - t0):.3}s')
+        logger.info(f'Lib prs: {len(self.df_pr)}')
 
     def __len__(self):
         return len(self.df_pr)
@@ -566,7 +564,7 @@ class Library():
         np.random.seed(1)
         df_lib = df_lib.sample(frac=1, random_state=1).reset_index(drop=True)
 
-        logger.info('Polishing spectral library finished.')
+        logger.info(f'Polishing spectral library: {len(df_lib)}prs')
 
         return df_lib
 

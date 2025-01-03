@@ -179,7 +179,7 @@ def load_ms(ws):
 class Tims():
     @profile
     def __init__(self, dir_d):
-        logger.info('Loading .d data...')
+        # logger.info('Loading .d data...')
         self.dir_d = dir_d
 
         self.bruker = bruker.TimsTOF(str(dir_d))
@@ -199,7 +199,7 @@ class Tims():
         self.d_ms1_maps = d_ms1_maps
         self.d_ms2_maps = d_ms2_maps
 
-        logger.info('Loading .d data finished.')
+        # logger.info('Loading .d data finished.')
 
     @property
     def frame_nums(self):

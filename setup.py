@@ -20,6 +20,7 @@ setup(
     include_package_data=True,
 
     install_requires=[
+        'psutil',
         'h5py',
         'matplotlib',
         'networkx',

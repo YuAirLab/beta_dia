@@ -59,9 +59,9 @@ def update_info_rt(df_seed, df_lib):
 
     x_fit, y_fit = fit_by_lowess(x3, y3, frac=0.2)
     f = interp1d(x_fit, y_fit, kind='cubic', fill_value='extrapolate')
-    tol = cal_turning_point(y0, f(x0))
+    tol_turn = cal_turning_point(y0, f(x0))
     y1_hat = f(x1)
-    good_idx = np.abs(y1 - y1_hat) < 1.5 * tol
+    good_idx = np.abs(y1 - y1_hat) < 1.5 * tol_turn
     x11, y11 = x1[good_idx], y1[good_idx]
 
     x_fit, y_fit = fit_by_lowess(x11, y11, frac=0.2)
@@ -81,7 +81,7 @@ def update_info_rt(df_seed, df_lib):
     y_new = f(x_new).astype(np.float32)
     df['pred_rt'] = y_new
     df['bias_rt'] = df['pred_rt'] - df['measure_rt']
-    df = df[df['bias_rt'].abs() < tol]
+    df = df[df['bias_rt'].abs() < tol_turn]
     df = df[(df['measure_pr_mz'] > 0) & (df['measure_im'] > 0)]
     df = df.reset_index(drop=True)
     bias = df['pred_rt'].values - df['measure_rt'].values

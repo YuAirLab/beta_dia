@@ -139,3 +139,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**](https://ww
   * FEAT: support .parquet lib
 #### 0.8.0
   * FEAT: Support MBR as the default run mode
+#### 0.8.1
+  * FEAT: Add polishing when for the reanalysis of runs

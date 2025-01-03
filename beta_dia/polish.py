@@ -66,7 +66,7 @@ def polish_prs(df_input, tol_im, tol_ppm, tol_sa_ratio, tol_share_num):
     1. Co-fragmentation prs should be polished.
     2. Decoy prs with cscore less than min(target) should be removed.
     '''
-    assert df_input['group_rank'].max() == 1
+    # assert df_input['group_rank'].max() == 1
     # target_good_idx = (df_input['decoy'] == 0) & (df_input['q_pr'] < 0.05)
     target_good_idx = (df_input['decoy'] == 0) & (df_input['is_main'])
 
@@ -126,6 +126,8 @@ def polish_prs(df_input, tol_im, tol_ppm, tol_sa_ratio, tol_share_num):
     logger.info(info)
 
     df = pd.concat([df_target, df_other], ignore_index=True)
-    utils.cal_acc_recall(param_g.ws_single, df[df['decoy'] == 0], diann_q_pr=0.01)
+
+    if param_g.is_compare_mode:
+        utils.cal_acc_recall(param_g.ws_single, df[df['decoy'] == 0], diann_q_pr=0.01)
 
     return df

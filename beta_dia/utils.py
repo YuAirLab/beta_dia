@@ -202,8 +202,16 @@ def save_as_pkl(df, fname):
 
 
 def save_as_pq(df, ws_single):
-    score_col = df.columns.str.startswith('score_')
-    table = pa.Table.from_pandas(df.loc[:, ~score_col])
+    cols = ['pr_id', 'pr_charge', 'pr_index',
+            'simple_seq', 'swath_id', 'decoy', 'pr_root', 'locus',
+            'measure_rt', 'measure_im', 'score_elute_span', 'cscore_pr', 'q_pr',
+            'is_main']
+    cols += ['score_center_elution_' + str(i) for i in range(14)]
+    cols += ['fg_mz_' + str(i) for i in range(12)]
+    cols += ['fg_quant_' + str(i) for i in range(12)]
+    cols += ['fg_sa_' + str(i) for i in range(12)]
+    df = df.loc[:, cols]
+    table = pa.Table.from_pandas(df)
     output_file = param_g.dir_out_global/(ws_single.name + '.parquet')
     pq.write_table(table, output_file)
 
@@ -378,10 +386,37 @@ def init_multi_ws(ws_global, out_name):
     param_g.dir_out_global.mkdir(exist_ok=True)
     Logger.set_logger(param_g.dir_out_global, is_time_name=param_g.is_time_log)
 
-    # GPU memory has to be larger than 10G!
-    total_memory = torch.cuda.get_device_properties(0).total_memory
-    if total_memory / 1024 ** 3 < 10:
+    # show version and platform
+    import platform
+    logger.info(f'Beta-DIA (v{__version__}) on {platform.system()} OS')
+
+    # show time
+    from datetime import datetime
+    logger.info(f'Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+
+    # show cpu
+    import psutil
+    cpu_num = psutil.cpu_count()
+    cpu_frq = psutil.cpu_freq().max / 1000
+    logger.info(f'CPU: {cpu_num}cores, Frequency: {cpu_frq:.1f}GHz')
+
+    # show memory
+    total = psutil.virtual_memory().total / 1024**3
+    free = psutil.virtual_memory().available / 1024**3
+    logger.info(f'RAM: {free:.0f}G/{total:.0f}G in free/total')
+
+    # show GPU
+    i = param_g.gpu_id
+    gpu_name = torch.cuda.get_device_name(i)
+    total = torch.cuda.get_device_properties(i).total_memory / 1024**3
+    free = total - torch.cuda.memory_allocated(i) / 1024**3
+    logger.info(f'GPU: {gpu_name}, {free:.0f}G/{total:.0f}G in free/total')
+    if free < 10:
         logger.warning('GPU memory is less than 10G. Beta-DIA may crash!')
+
+    # show cmd
+    import sys
+    logger.info(f'CMD: {" ".join(sys.argv)}')
 
     multi_ws = []
     for ws_i in ws_global.rglob('*.d'):
@@ -402,10 +437,7 @@ def init_single_ws(ws_i, total, ws_single, out_name, dir_lib, entry_num):
         param_g.dir_out_global.mkdir(exist_ok=True)
 
     logger.info(f'====================={ws_i+1}/{total}=====================')
-    logger.info(f'Beta-DIA v{__version__}')
-    logger.info('.d: ' + str(ws_single.name))
-    logger.info('Lib: ' + Path(dir_lib).name)
-    logger.info(f'Lib prs: {entry_num}')
+    logger.info(f'.d: {str(ws_single.name)}')
 
 
 def cal_external_q_pr(df):
@@ -459,7 +491,10 @@ def print_ids(df, q_cut, level='pr'):
             ids.append(df_sub.pr_id.nunique())
             if param_g.is_compare_mode:
                 cal_acc_recall(param_g.ws_single, df_sub, diann_q_pr=0.01)
-        info = 'Precusor Ids at FDR:      {}-0.01, {}-0.05'.format(ids[0], ids[1])
+        id100 = (df['decoy'] == 0).sum()
+        info = 'Ids-Precursor at FDR:     {}-0.01, {}-0.05, {}-all'.format(
+            ids[0], ids[1], id100
+        )
         logger.info(info)
 
     if level == 'pg':
@@ -471,5 +506,19 @@ def print_ids(df, q_cut, level='pr'):
             else:
                 df_sub = df_sub[(df_sub['decoy'] == 0)]
             ids.append(df_sub['protein_group'].nunique())
-        info = 'Protein Group Ids at FDR: {}-0.01, {}-0.05'.format(ids[0], ids[1])
+        id100 = df[df['decoy'] == 0]['protein_group'].nunique()
+        info = 'Ids-Protein Group at FDR: {}-0.01, {}-0.05, {}-all'.format(
+            ids[0], ids[1], id100
+        )
         logger.info(info)
+
+
+def print_external_fdr(df):
+    total = (df['q_pr_global'] < 0.01)
+    bad = ((df['q_pr_global'] < 0.01) &
+           (df['protein_name'].str.contains('ARATH')) &
+           (~df['protein_name'].str.contains('HUMAN'))
+          )
+    external_fdr = sum(bad) / sum(total)
+    logger.info(f'q_pr_global_external at report-global-0.01: {external_fdr:.3f}')
+
