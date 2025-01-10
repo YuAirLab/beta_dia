@@ -2,7 +2,7 @@ from itertools import product
 
 import numpy as np
 import pandas as pd
-from numba import cuda, jit, prange
+from numba import cuda
 
 from beta_dia import fxic
 from beta_dia import param_g
@@ -196,19 +196,19 @@ def quant_fg_ions(df_input, ms):
 
 def quant_pg(df):
     '''
-    If a pg has >=1 pr within 1%-FDR, sum value of top-3 if for its quant.
+    If a pg has >=1 pr within 1%-FDR, sum value of top-n if for its quant.
     Otherwise, top-1 is its quant.
     '''
-    df_tmp1 = df[df['q_pr'] < 0.01].reset_index(drop=True)
+    df_tmp1 = df[df['q_pr_run'] < 0.01].reset_index(drop=True)
     df_tmp1 = df_tmp1.groupby('protein_group').apply(
-        lambda x: x.nlargest(param_g.top_k_pr, 'quant_pr')['quant_pr'].sum()
+        lambda x: x.nlargest(param_g.top_k_pr, 'quant_pr')['quant_pr'].mean()
     ).reset_index(name='quant_pg')
 
     df_tmp2 = df[~df['protein_group'].isin(df_tmp1['protein_group'])]
     if len(df_tmp2) > 0:
         df_tmp2 = df_tmp2.reset_index(drop=True)
         df_tmp2 = df_tmp2.groupby('protein_group').apply(
-            lambda x: x.nlargest(1, 'quant_pr')['quant_pr'].sum()
+            lambda x: x.nlargest(1, 'quant_pr')['quant_pr'].mean()
         ).reset_index(name='quant_pg')
         df_tmp = pd.concat([df_tmp1, df_tmp2])
     else:

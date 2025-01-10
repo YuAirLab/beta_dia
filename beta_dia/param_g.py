@@ -41,9 +41,10 @@ window_points = 7 # SA only using 7 cycles.
 patient = 5
 
 # global
+n_attached = 2 # how many attached prs will be saved
 top_k_fg = 4 # select top_k_fg ions for cross quantification of precursors
-top_k_pr = 2 # select top_k_pr prs for protein quantification
-q_cut_infer = 0.05 # which prs will be used for protein group infer
+top_k_pr = 3 # select top_k_pr prs for protein quantification
+q_cut_infer = 0.05 # which prs will be used for protein group infer and score
 
 g_aa_to_mass = {'A': 89.0476792233, 'C': 160.030644505, 'D': 133.0375092233,
                 'E': 147.05315928710002,

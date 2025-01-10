@@ -141,3 +141,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**](https://ww
   * FEAT: Support MBR as the default run mode
 #### 0.8.1
   * FEAT: Add polishing when for the reanalysis of runs
+#### 0.9.0
+  * FIX: optimize the MBR

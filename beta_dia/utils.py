@@ -19,9 +19,6 @@ from beta_dia import param_g
 from beta_dia.log import Logger
 from beta_dia import __version__
 
-# from xgboost.sklearn import XGBClassifier
-
-
 try:
     profile
 except NameError:
@@ -203,10 +200,12 @@ def save_as_pkl(df, fname):
 
 def save_as_pq(df, ws_single):
     cols = ['pr_id', 'pr_charge', 'pr_index',
-            'simple_seq', 'swath_id', 'decoy', 'pr_root', 'locus',
-            'measure_rt', 'measure_im', 'score_elute_span', 'cscore_pr', 'q_pr',
+            'simple_seq', 'swath_id', 'decoy', 'locus',
+            'measure_rt', 'measure_im', 'cscore_pr_run', 'q_pr_run',
             'is_main']
     cols += ['score_center_elution_' + str(i) for i in range(14)]
+    cols += ['score_elute_span']
+    # cols += list(df.columns[df.columns.str.startswith('score_')])
     cols += ['fg_mz_' + str(i) for i in range(12)]
     cols += ['fg_quant_' + str(i) for i in range(12)]
     cols += ['fg_sa_' + str(i) for i in range(12)]
@@ -284,16 +283,16 @@ def convert_cols_to_diann(df, ws_single):
         'quant_pg': 'PG.Quantity',
         'pr_id': 'Precursor.Id',
         'pr_charge': 'Precursor.Charge',
-        'q_pr': 'Q.Value',
-        'q_pr_global': 'Global.Q.Value',
-        'q_pg': 'PG.Q.Value',
-        'q_pg_global': 'Global.PG.Q.Value',
+        'q_pr_run': 'Q.Value',
+        'q_pr_global_second': 'Global.Q.Value',
+        'q_pg_run': 'PG.Q.Value',
+        'q_pg_global_second': 'Global.PG.Q.Value',
         'proteotypic': 'Proteotypic',
         'quant_pr': 'Precursor.Quantity',
         'measure_rt': 'RT',
         'fgs_sa': 'Fragment.Correlations',
         'fgs_quant': 'Fragment.Quant.Raw',
-        'cscore_pr': 'CScore',
+        # 'cscore_pr_run': 'CScore',
         'measure_im': 'IM',
     })
     df = df[[
@@ -303,7 +302,7 @@ def convert_cols_to_diann(df, ws_single):
         'PG.Q.Value', 'Global.PG.Q.Value', 'PG.Quantity',
         # Pr
         'Precursor.Id', 'Precursor.Charge', 'Proteotypic',
-        'Q.Value', 'Global.Q.Value', 'Precursor.Quantity', 'CScore',
+        'Q.Value', 'Global.Q.Value', 'Precursor.Quantity', # 'CScore',
         'Fragment.Quant.Raw', 'Fragment.Correlations', 'RT', 'IM'
     ]]
     return df
@@ -408,9 +407,9 @@ def init_multi_ws(ws_global, out_name):
     # show GPU
     i = param_g.gpu_id
     gpu_name = torch.cuda.get_device_name(i)
-    total = torch.cuda.get_device_properties(i).total_memory / 1024**3
-    free = total - torch.cuda.memory_allocated(i) / 1024**3
-    logger.info(f'GPU: {gpu_name}, {free:.0f}G/{total:.0f}G in free/total')
+    free, total = cuda.current_context().get_memory_info()
+    free, total = free / 1024**3, total / 1024**3
+    logger.info(f'GPU: {gpu_name}-{i}, {free:.0f}G/{total:.0f}G in free/total')
     if free < 10:
         logger.warning('GPU memory is less than 10G. Beta-DIA may crash!')
 
@@ -430,7 +429,7 @@ def init_multi_ws(ws_global, out_name):
         logger.warning(info)
 
 
-def init_single_ws(ws_i, total, ws_single, out_name, dir_lib, entry_num):
+def init_single_ws(ws_i, total, ws_single, out_name):
     param_g.ws_single = ws_single
     param_g.dir_out_single = (ws_single / out_name)
     if param_g.is_compare_mode:
@@ -447,7 +446,6 @@ def cal_external_q_pr(df):
     dfx.loc[dfx['protein_name'].str.contains('HUMAN'), 'species'] = 'HUMAN'
     external_fdr = sum(dfx['species'] == 'ARATH') / sum(dfx['species'] == 'HUMAN')
     print(f'{len(dfx)}, external_fdr: {external_fdr:.4f}')
-
 
 
 def cross_cos(x):
@@ -479,11 +477,11 @@ def interp_xics(xics, rts, target_dim):
     return result_rts, result_xics
 
 
-def print_ids(df, q_cut, level='pr'):
-    if level == 'pr':
+def print_ids(df, q_cut, pr_or_pg, run_or_global):
+    if pr_or_pg == 'pr':
         ids = []
         for q_pr in [0.01, q_cut]:
-            df_sub = df[(df['q_pr'] <= q_pr)]
+            df_sub = df[(df['q_pr_' + run_or_global] <= q_pr)]
             if 'is_main' in df_sub.columns:
                 df_sub = df_sub[(df_sub['decoy'] == 0) & df_sub['is_main']]
             else:
@@ -492,23 +490,23 @@ def print_ids(df, q_cut, level='pr'):
             if param_g.is_compare_mode:
                 cal_acc_recall(param_g.ws_single, df_sub, diann_q_pr=0.01)
         id100 = (df['decoy'] == 0).sum()
-        info = 'Ids-Precursor at FDR:     {}-0.01, {}-0.05, {}-all'.format(
-            ids[0], ids[1], id100
+        info = 'Ids-Precursor at {} FDR:     {}-0.01, {}-{:.2f}, {}-all'.format(
+            run_or_global, ids[0], ids[1], q_cut, id100
         )
         logger.info(info)
 
-    if level == 'pg':
+    if pr_or_pg == 'pg':
         ids = []
         for q_pg in [0.01, q_cut]:
-            df_sub = df[(df['q_pg'] <= q_pg)]
+            df_sub = df[(df['q_pg_' + run_or_global] <= q_pg)]
             if 'is_main' in df_sub.columns:
                 df_sub = df_sub[(df_sub['decoy'] == 0) & df_sub['is_main']]
             else:
                 df_sub = df_sub[(df_sub['decoy'] == 0)]
             ids.append(df_sub['protein_group'].nunique())
         id100 = df[df['decoy'] == 0]['protein_group'].nunique()
-        info = 'Ids-Protein Group at FDR: {}-0.01, {}-0.05, {}-all'.format(
-            ids[0], ids[1], id100
+        info = 'Ids-Protein Group at {} FDR: {}-0.01, {}-{:.2f}, {}-all'.format(
+            run_or_global, ids[0], ids[1], q_cut, id100
         )
         logger.info(info)
 
@@ -521,4 +519,3 @@ def print_external_fdr(df):
           )
     external_fdr = sum(bad) / sum(total)
     logger.info(f'q_pr_global_external at report-global-0.01: {external_fdr:.3f}')
-

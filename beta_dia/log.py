@@ -1,15 +1,18 @@
-import datetime
 import logging
 import time
 
 class MyFormatter(logging.Formatter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start_time = time.time()
+
     def format(self, record):
-        ms = record.relativeCreated
-        delta_time = datetime.timedelta(milliseconds=ms)
-        clock_time = datetime.datetime(1, 1, 1) + delta_time
-        clock_string = clock_time.strftime("%H:%M:%S")
-        record.adjustedTime = clock_string
-        return super(MyFormatter, self).format(record)
+        total_seconds = int(time.time() - self.start_time)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        record.elapsed_time = f"{hours:02}:{minutes:02}:{seconds:02}"
+        return super().format(record)
 
 
 class Logger():
@@ -36,9 +39,7 @@ class Logger():
         ch.setLevel(logging.INFO)
 
         # format to handler
-        formatter = MyFormatter(
-            '%(adjustedTime)s: %(message)s'
-        )
+        formatter = MyFormatter(fmt = '%(elapsed_time)s: %(message)s')
         fh.setFormatter(formatter)
         ch.setFormatter(formatter)
 

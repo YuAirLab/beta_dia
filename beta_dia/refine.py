@@ -25,7 +25,7 @@ def extract_map_by_compare(df_top, ms):
     # targets within FDR-%1 are pos samples
     df_target = df_top[(df_top['decoy'] == 0) &
                     (df_top['group_rank'] == 1) &
-                    (df_top['q_pr'] < 0.01)].reset_index(drop=True)
+                    (df_top['q_pr_run'] < 0.01)].reset_index(drop=True)
     if len(df_target) > 10000:
         df_target = df_target.sample(n=10000, random_state=1, replace=False)
 
