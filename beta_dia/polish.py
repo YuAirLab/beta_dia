@@ -52,6 +52,7 @@ def polish_prs_core(swath_id_v, measure_locus_v, measure_im_v,
 
             sa_i = sa_m[i]
             fg_mz_j = fg_mz_m[j]
+
             is_share_v = is_fg_share(fg_mz_j, fg_mz_i, tol_ppm)
             is_share_v = is_share_v & (sa_i > 0)
             for jj in np.where(is_share_v)[0]:
@@ -95,12 +96,13 @@ def polish_prs(df_input, tol_im, tol_ppm, tol_sa_ratio, tol_share_num):
 
     cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
     fg_mz_center = df_target[cols_center].values
-    cols_center = ['score_center_elution_' + str(i) for i in range(2, 14)]
+    cols_center = ['score_ion_sa_' + str(i) for i in range(2, 14)]
     sa_center = df_target[cols_center].values
 
     fg_mz_m = np.concatenate([fg_mz_center], axis=1)
     fg_mz_m = np.ascontiguousarray(fg_mz_m)
     fg_mz_m_raw = fg_mz_m.copy()
+
     sa_m = np.concatenate([sa_center], axis=1)
     sa_m = np.ascontiguousarray(sa_m)
     sa_m_raw = sa_m.copy()
@@ -166,7 +168,7 @@ def polish_prs_in_reanalysis(df_input, tol_im, tol_ppm, tol_sa_ratio, tol_share_
 
     cols_center = ['fg_mz_' + str(i) for i in range(param_g.fg_num)]
     fg_mz_center = df_target[cols_center].values
-    cols_center = ['score_center_elution_' + str(i) for i in range(2, 14)]
+    cols_center = ['score_ion_sa_' + str(i) for i in range(2, 14)]
     sa_center = df_target[cols_center].values
 
     fg_mz_m = np.concatenate([fg_mz_center], axis=1)

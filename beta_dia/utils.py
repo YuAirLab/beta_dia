@@ -200,15 +200,15 @@ def save_as_pkl(df, fname):
 
 def save_as_pq(df, ws_single):
     cols = ['pr_id', 'pr_charge', 'pr_index',
-            'simple_seq', 'swath_id', 'decoy', 'locus',
+            'swath_id', 'decoy', 'locus',
             'measure_rt', 'measure_im', 'cscore_pr_run', 'q_pr_run',
             'is_main']
-    cols += ['score_center_elution_' + str(i) for i in range(14)]
+    # cols += ['score_center_elution_' + str(i) for i in range(14)]
     cols += ['score_elute_span']
     # cols += list(df.columns[df.columns.str.startswith('score_')])
+    cols += ['score_ion_quant_' + str(i) for i in range(14)]
+    cols += ['score_ion_sa_' + str(i) for i in range(14)]
     cols += ['fg_mz_' + str(i) for i in range(12)]
-    cols += ['fg_quant_' + str(i) for i in range(12)]
-    cols += ['fg_sa_' + str(i) for i in range(12)]
     df = df.loc[:, cols]
     table = pa.Table.from_pandas(df)
     output_file = param_g.dir_out_global/(ws_single.name + '.parquet')
@@ -266,13 +266,13 @@ def convert_cols_to_diann(df, ws_single):
     df['file_name'] = '/'.join(ws_single.parts[-2:])
     df['run'] = ws_single.stem
 
-    cols_quant = ['fg_quant_' + str(i) for i in range(param_g.fg_num)]
+    cols_quant = ['score_ion_quant_' + str(i) for i in range(2+param_g.fg_num)]
     tmp = np.round(df[cols_quant].values, 2).astype(str)
-    df['fgs_quant'] = [';'.join(row) for row in tmp]
+    df['ion_quant'] = [';'.join(row) for row in tmp]
 
-    cols_sa = ['fg_sa_' + str(i) for i in range(param_g.fg_num)]
+    cols_sa = ['score_ion_sa_' + str(i) for i in range(2+param_g.fg_num)]
     tmp = np.round(df[cols_sa].values, 2).astype(str)
-    df['fgs_sa'] = [';'.join(row) for row in tmp]
+    df['ion_sa'] = [';'.join(row) for row in tmp]
 
     df = df.rename(columns={
         'file_name': 'File.Name',
@@ -290,8 +290,8 @@ def convert_cols_to_diann(df, ws_single):
         'proteotypic': 'Proteotypic',
         'quant_pr': 'Precursor.Quantity',
         'measure_rt': 'RT',
-        'fgs_sa': 'Fragment.Correlations',
-        'fgs_quant': 'Fragment.Quant.Raw',
+        'ion_sa': 'Fragment.Correlations',
+        'ion_quant': 'Fragment.Quant.Raw',
         # 'cscore_pr_run': 'CScore',
         'measure_im': 'IM',
     })
@@ -418,9 +418,12 @@ def init_multi_ws(ws_global, out_name):
     logger.info(f'CMD: {" ".join(sys.argv)}')
 
     multi_ws = []
-    for ws_i in ws_global.rglob('*.d'):
-        if ws_i.is_dir():
-            multi_ws.append(ws_i)
+    if ws_global.suffix == '.d':
+        multi_ws.append(ws_global)
+    else:
+        for ws_i in ws_global.rglob('*.d'):
+            if ws_i.is_dir():
+                multi_ws.append(ws_i)
     param_g.multi_ws = multi_ws
     param_g.file_num = len(param_g.multi_ws)
 
@@ -487,7 +490,7 @@ def print_ids(df, q_cut, pr_or_pg, run_or_global):
             else:
                 df_sub = df_sub[(df_sub['decoy'] == 0)]
             ids.append(df_sub.pr_id.nunique())
-            if param_g.is_compare_mode:
+            if param_g.is_compare_mode and (run_or_global == 'run'):
                 cal_acc_recall(param_g.ws_single, df_sub, diann_q_pr=0.01)
         id100 = (df['decoy'] == 0).sum()
         info = 'Ids-Precursor at {} FDR:     {}-0.01, {}-{:.2f}, {}-all'.format(
@@ -511,11 +514,43 @@ def print_ids(df, q_cut, pr_or_pg, run_or_global):
         logger.info(info)
 
 
-def print_external_fdr(df):
-    total = (df['q_pr_global'] < 0.01)
-    bad = ((df['q_pr_global'] < 0.01) &
-           (df['protein_name'].str.contains('ARATH')) &
-           (~df['protein_name'].str.contains('HUMAN'))
-          )
-    external_fdr = sum(bad) / sum(total)
-    logger.info(f'q_pr_global_external at report-global-0.01: {external_fdr:.3f}')
+def print_external_global_fdr(df, first_or_second):
+    for fdr in [0.01, 0.05]:
+        total = (df['q_pr_global_' + first_or_second] < fdr) & (df['decoy'] == 0)
+        bad = ((df['q_pr_global_' + first_or_second] < fdr) & (df['decoy'] == 0) &
+               (df['protein_name'].str.contains('ARATH')) &
+               (~df['protein_name'].str.contains('HUMAN'))
+              )
+        external_fdr = sum(bad) / sum(total)
+        print(f'Global Pr level: {fdr:.3f}-{external_fdr:.3f}')
+    for fdr in [0.01, 0.05]:
+        total = (df['q_pg_global_' + first_or_second] < fdr) & (df['decoy'] == 0)
+        bad = ((df['q_pg_global_' + first_or_second] < fdr) & (df['decoy'] == 0) &
+               (df['protein_name'].str.contains('ARATH')) &
+               (~df['protein_name'].str.contains('HUMAN'))
+               )
+        total = df[total]['protein_group'].nunique()
+        bad = df[bad]['protein_group'].nunique()
+        external_fdr = bad / total
+        print(f'Global Pg level: {fdr:.3f}-{external_fdr:.3f}')
+
+
+def print_external_run_fdr(df):
+    for fdr in [0.01, 0.05]:
+        total = (df['q_pr_run'] < fdr) & (df['decoy'] == 0)
+        bad = ((df['q_pr_run'] < fdr) & (df['decoy'] == 0) &
+               (df['protein_name'].str.contains('ARATH')) &
+               (~df['protein_name'].str.contains('HUMAN'))
+              )
+        external_fdr = sum(bad) / sum(total)
+        print(f'Run Pr level: {fdr:.3f}-{external_fdr:.3f}')
+    for fdr in [0.01, 0.05]:
+        total = (df['q_pg_run'] < fdr) & (df['decoy'] == 0)
+        bad = ((df['q_pg_run'] < fdr) & (df['decoy'] == 0) &
+               (df['protein_name'].str.contains('ARATH')) &
+               (~df['protein_name'].str.contains('HUMAN'))
+               )
+        total = df[total]['protein_group'].nunique()
+        bad = df[bad]['protein_group'].nunique()
+        external_fdr = bad / total
+        print(f'Run Pg level: {fdr:.3f}-{external_fdr:.3f}')

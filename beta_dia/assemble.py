@@ -39,8 +39,8 @@ def greedy_bipartite_vertex_cover(graph):
              # sum((edge['weight'] for edge in graph[node].values()))
         ] for node in left_nodes
         ]
-        df = pd.DataFrame(df, columns=['Node', 'Degree', 'W_Max'])
-        df = df.sort_values(by=['Degree', 'W_Max'], ascending=[False, False])
+        df = pd.DataFrame(df, columns=['Node', 'Degree', 'Q'])
+        df = df.sort_values(by=['Degree', 'Q'], ascending=[False, True])
         df = df.reset_index(drop=True)
         node = df.loc[0, 'Node']
 
@@ -57,14 +57,19 @@ def greedy_bipartite_vertex_cover(graph):
 
 
 def assemble_to_pg(df_input, q_cut_infer, run_or_global):
-    col_cscore = 'cscore_pr_' + run_or_global
+    col_q_pr = 'q_pr_' + run_or_global
 
     if 'strip_seq' not in df_input.columns:
+        if 'simple_seq' not in df_input.columns:
+            df_input['simple_seq'] = df_input['pr_id'].str[:-1]
+            df_input['simple_seq'] = df_input['pr_id'].str[:-1].replace(
+                ['C\(UniMod:4\)', 'M\(UniMod:35\)'], ['c', 'm'], regex=True
+            )
         df_input['strip_seq'] = df_input['simple_seq'].str.upper()
 
-    df = df_input[df_input[col_cscore] < q_cut_infer]
+    df = df_input[df_input[col_q_pr] < q_cut_infer]
 
-    df = df[['protein_id', 'strip_seq', col_cscore]]
+    df = df[['protein_id', 'strip_seq', col_q_pr]]
     df['protein_id'] = df['protein_id'].str.split(';')
     proteins = df['protein_id'].explode().values
     protein_num = df['protein_id'].apply(len)
@@ -96,8 +101,8 @@ def assemble_to_pg(df_input, q_cut_infer, run_or_global):
     df['Protein.Meta'] = df_protein.loc[df['protein_id']][
         'Protein.Meta'].values
     df['Peptide.Meta'] = df['strip_seq'] # no need to make peptide.meta
-    df = df[['Protein.Meta', 'Peptide.Meta', col_cscore]]
-    df = df.sort_values(col_cscore, ascending=False)
+    df = df[['Protein.Meta', 'Peptide.Meta', col_q_pr]]
+    df = df.sort_values(col_q_pr, ascending=True)
     df = df.drop_duplicates(
         subset=['Protein.Meta', 'Peptide.Meta'], keep='first'
     ).reset_index(drop=True)
@@ -107,7 +112,7 @@ def assemble_to_pg(df_input, q_cut_infer, run_or_global):
     graph.add_nodes_from(df['Protein.Meta'], bipartite=0)
     graph.add_nodes_from(df['Peptide.Meta'], bipartite=1)
     edges = [
-        (row['Protein.Meta'], row['Peptide.Meta'], row[col_cscore])
+        (row['Protein.Meta'], row['Peptide.Meta'], row[col_q_pr])
              for _, row in df.iterrows()
     ]
     graph.add_weighted_edges_from(edges)

@@ -42,7 +42,7 @@ patient = 5
 
 # global
 n_attached = 2 # how many attached prs will be saved
-top_k_fg = 4 # select top_k_fg ions for cross quantification of precursors
+top_k_fg = 5 # select top_k_fg ions for cross quantification of precursors
 top_k_pr = 3 # select top_k_pr prs for protein quantification
 q_cut_infer = 0.05 # which prs will be used for protein group infer and score
 

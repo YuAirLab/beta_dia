@@ -103,7 +103,7 @@ def update_info_rt(df_seed, df_lib):
                     x1, y1,
                     x11, y11,
                     x_fit, y_fit,
-                    tol,
+                    param_g.tol_rt,
                     bias,
                     fname='update_info_rt')
 

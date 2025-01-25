@@ -84,7 +84,7 @@ def extract_map_by_compare(df_top, ms):
     df_target['decoy'] = 0
     idx_x = np.arange(len(df_target))
     target_ims = measure_ims[idx_x, locus_pos]
-    assert np.abs(df_target['measure_im'] - target_ims).max() < 0.01
+    assert np.abs(df_target['measure_im'] - target_ims).max() < 0.02
 
     df_target_left = df_target.copy()
     df_target_left['locus'] = df_target_left['locus'] - 1

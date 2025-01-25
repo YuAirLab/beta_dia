@@ -30,9 +30,10 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
             im_tolerance=tol_im,
             ppm_tolerance=tol_ppm,
             cycle_num=13,
-            by_pred=False
+            by_pred=False,
         )
-        xics = xics.copy_to_host()[:, 2:, :]
+
+        xics = xics.copy_to_host() # 14 ions
         mask1 = np.arange(xics.shape[2]) >= locus_start_v[:, None, None]
         mask2 = np.arange(xics.shape[2]) <= locus_end_v[:, None, None]
         xics = xics * mask1 * mask2
@@ -42,7 +43,7 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
 
         # find best profile from top-6
         if search_i == 0:
-            xics_top6 = xics[:, :6, :]
+            xics_top6 = xics[:, 2:8, :]
             sas = np.array(list(map(utils.cross_cos, xics_top6)))
             sa_sum = sas.sum(axis=-1)
             best_ion_idx = sa_sum.argmax(axis=-1)
@@ -70,6 +71,8 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
     norm1 = np.linalg.norm(best_profile, axis=-1) + 1e-6
     norm2 = np.linalg.norm(xics, axis=-1) + 1e-6
     sas = dot_sum / (norm1 * norm2) # [n_pep, tol, n_ion]
+    sas[sas > 1.] = 1.
+    sas = 1 - 2 * np.arccos(sas) / np.float32(np.pi)
     idx = sas.argmax(axis=1)
     sas = np.take_along_axis(sas, idx[:, None, :], axis=1)[:, 0, :] # [n_pep, n_ion]
 
@@ -96,7 +99,7 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
         cycle_num=13,
         by_pred=False
     )
-    xics2 = xics2.copy_to_host()[:, 2:, :]
+    xics2 = xics2.copy_to_host()
     mask1 = np.arange(xics2.shape[2]) >= locus_start_v[:, None, None]
     mask2 = np.arange(xics2.shape[2]) <= locus_end_v[:, None, None]
     xics2 = xics2 * mask1 * mask2
@@ -108,15 +111,14 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
     df_batch.loc[bad_xic, 'integral_left'] = 15 # 3-13, 15-64
     df_batch.loc[bad_xic, 'integral_right'] = 50 # 9-13, 50-64
 
+    assert np.isnan(sas).sum() == 0
     return rts, xics, sas
 
 
-def quant_fg_ions(df_input, ms):
-    df = df_input[df_input['decoy'] == 0]
-    df_decoy = df_input[df_input['decoy'] == 1]
+def quant_center_ions(df_input, ms):
     df_good = []
-    for swath_id in df['swath_id'].unique():
-        df_swath = df[df['swath_id'] == swath_id]
+    for swath_id in df_input['swath_id'].unique():
+        df_swath = df_input[df_input['swath_id'] == swath_id]
         df_swath = df_swath.reset_index(drop=True)
 
         # ms
@@ -141,14 +143,13 @@ def quant_fg_ions(df_input, ms):
             areas = np.trapz(xics, axis=-1)
 
             # save
-            cols = ['fg_quant_' + str(i) for i in range(param_g.fg_num)]
+            cols = ['score_ion_quant_' + str(i) for i in range(param_g.fg_num + 2)]
             df_batch[cols] = areas
-            cols = ['fg_sa_' + str(i) for i in range(param_g.fg_num)]
+            cols = ['score_ion_sa_' + str(i) for i in range(param_g.fg_num + 2)]
             df_batch[cols] = sas
             df_good.append(df_batch)
         utils.release_gpu_scans(ms1_centroid, ms2_centroid)
     df = pd.concat(df_good, axis=0, ignore_index=True)
-    df = pd.concat([df, df_decoy], axis=0, ignore_index=True)
     return df
 
 
