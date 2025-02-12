@@ -288,6 +288,8 @@ def convert_cols_to_diann(df, ws_single):
         'q_pg_run': 'PG.Q.Value',
         'q_pg_global_second': 'Global.PG.Q.Value',
         'proteotypic': 'Proteotypic',
+        'quant_pr_deep': 'Precursor.Quantity.Deep',
+        'quant_pr_raw': 'Precursor.Quantity.Raw',
         'quant_pr': 'Precursor.Quantity',
         'measure_rt': 'RT',
         'ion_sa': 'Fragment.Correlations',
@@ -302,7 +304,8 @@ def convert_cols_to_diann(df, ws_single):
         'PG.Q.Value', 'Global.PG.Q.Value', 'PG.Quantity',
         # Pr
         'Precursor.Id', 'Precursor.Charge', 'Proteotypic',
-        'Q.Value', 'Global.Q.Value', 'Precursor.Quantity', # 'CScore',
+        'Q.Value', 'Global.Q.Value',  # 'CScore',
+        'Precursor.Quantity.Raw', 'Precursor.Quantity.Deep', 'Precursor.Quantity',
         'Fragment.Quant.Raw', 'Fragment.Correlations', 'RT', 'IM'
     ]]
     return df

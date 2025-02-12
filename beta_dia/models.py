@@ -179,3 +179,37 @@ class DeepMall(nn.Module):
         result = self.fc2(self.relu(feature))
 
         return feature, result
+
+
+class DeepQuant(nn.Module):
+    def __init__(self, n_run, n_ion):
+        super().__init__()
+        # self.fc_area = nn.Linear(n_run*n_ion, n_run*16)
+        # self.fc_sa = nn.Linear(n_run*n_ion, n_run*16)
+        self.encoder = nn.Sequential(
+            nn.Linear(n_run*n_ion*3, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(0.01),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16)
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(16, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.Dropout(0.01),
+            nn.Linear(32, 64),
+            nn.ReLU(),
+            nn.Linear(64, n_run*n_ion),  # reconstruct the intensities
+            nn.ReLU() # non-negtive
+        )
+
+    def forward(self, x_area1, x_area2, x_sa):
+        # x1 = self.fc_area(x_area)
+        # x2 = self.fc_sa(x_sa)
+        x = torch.cat([x_area1, x_area2, x_sa], dim=1)
+        z = self.encoder(x)
+        z = self.decoder(z)
+        return z

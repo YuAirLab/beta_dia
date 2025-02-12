@@ -47,7 +47,7 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
             sas = np.array(list(map(utils.cross_cos, xics_top6)))
             sa_sum = sas.sum(axis=-1)
             best_ion_idx = sa_sum.argmax(axis=-1)
-            best_profile = xics[np.arange(len(xics)), best_ion_idx]
+            best_profile = xics_top6[np.arange(len(xics_top6)), best_ion_idx]
 
             bad_xic = np.abs(best_profile.argmax(axis=-1) - expand_dim/2) > 6
 

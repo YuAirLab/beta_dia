@@ -8,6 +8,7 @@ multi_ws = None
 file_num = None
 tol_rt = None # second
 locus_rt_thre = None # second
+gpu_id = None
 
 # tol_rt is related to the length of gradient
 tol_rt_ratio = 1/15
