@@ -1,7 +1,8 @@
 from torch.utils.data.dataset import Dataset
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except:
     profile = lambda x: x
 

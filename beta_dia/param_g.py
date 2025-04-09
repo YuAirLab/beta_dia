@@ -1,27 +1,29 @@
 is_compare_mode = False
 is_time_log = False
+phase = 'First' # or 'Second'
 
 # placeholder
 dir_out_global = None
 dir_out_single = None
+dir_out_name = None
 multi_ws = None
 file_num = None
 tol_rt = None # second
 locus_rt_thre = None # second
 gpu_id = None
+is_overwrite = False
 
 # tol_rt is related to the length of gradient
 tol_rt_ratio = 1/15
+sample_ratio = 0.1 # sample for calculate tolerances
 # locuses from Beta-DIA and DIA-NN within this value are considered consistent
 locus_valid_num = 3.5
 # seek locus
-top_sa_cut, top_deep_cut = 0.75, 0.75
-# batch size max for targets; when low memory mode, it's 150000
+top_sa_cut, top_deep_cut = 0.75, 0.66
+# batch size max for targets; when low memory mode, it's 250000
 target_batch_max = 450000
 # batch q cut
 rubbish_q_cut = 0.5
-# protein inference q cut
-inference_q_cut = 0.05
 
 # widely used
 fg_num = 12
@@ -42,10 +44,9 @@ window_points = 7 # SA only using 7 cycles.
 patient = 5
 
 # global
-n_attached = 2 # how many attached prs will be saved
 top_k_fg = 5 # select top_k_fg ions for cross quantification of precursors
 top_k_pr = 3 # select top_k_pr prs for protein quantification
-q_cut_infer = 0.05 # which prs will be used for protein group infer and score
+q_cut_infer = None # which prs will be used for protein group infer and score
 
 g_aa_to_mass = {'A': 89.0476792233, 'C': 160.030644505, 'D': 133.0375092233,
                 'E': 147.05315928710002,

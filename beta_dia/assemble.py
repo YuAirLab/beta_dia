@@ -5,7 +5,8 @@ import networkx as nx
 from beta_dia.log import Logger
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except NameError:
     profile = lambda x: x
 
@@ -36,12 +37,13 @@ def greedy_bipartite_vertex_cover(graph):
         df = [
             [node,
              len(graph[node]),
-             max((edge['weight'] for edge in graph[node].values()), default=0)
-             # sum((edge['weight'] for edge in graph[node].values()))
+             max((edge['weight'] for edge in graph[node].values()), default=0),
+             sum((edge['weight'] for edge in graph[node].values()))
         ] for node in left_nodes
         ]
-        df = pd.DataFrame(df, columns=['Node', 'Degree', 'CScore'])
-        df = df.sort_values(by=['Degree', 'CScore'], ascending=[False, False])
+        df = pd.DataFrame(df, columns=['Node', 'Degree', 'CScore_Max', 'CScore_Sum'])
+        df['N'] = df['Node'].str.count(';')
+        df = df.sort_values(by=['Degree', 'CScore_Max', 'CScore_Sum', 'N'], ascending=[False, False, False, True])
         df = df.reset_index(drop=True)
         node = df.loc[0, 'Node']
 

@@ -3,18 +3,131 @@ from itertools import product
 import numpy as np
 import pandas as pd
 from numba import cuda
+import torch
 
 from beta_dia import fxic
 from beta_dia import param_g
 from beta_dia import utils
 from beta_dia.log import Logger
 
+try:
+    # profile
+    profile = lambda x: x
+except:
+    profile = lambda x: x
+
 logger = Logger.get_logger()
 
+def mask_tensor(x, left, right):
+    device = x.device
 
+    n_pr, n_ion, n_cycle = x.shape
+    cycle_indices = torch.arange(n_cycle, device=device).view(1, 1, -1)
+
+    left = left.view(-1, 1, 1)
+    right = right.view(-1, 1, 1)
+    mask = (cycle_indices >= left) & (cycle_indices <= right)
+    return x * mask
+
+
+@profile
+def interp_xics(x, rts_input, target_dim):
+    rts = torch.from_numpy(rts_input).to(param_g.gpu_id)
+
+    n_pr, n_ion, n_cycle = x.shape
+
+    tmp = torch.linspace(0, 1, target_dim, device=x.device).unsqueeze(0)
+    new_rts = rts[:, [0]] + (rts[:, [-1]] - rts[:, [0]]) * tmp
+
+    idx = torch.searchsorted(rts, new_rts)
+    idx_right = idx.clamp(max=n_cycle - 1)
+    idx_left = (idx_right - 1).clamp(min=0)
+
+    t_left = torch.gather(rts, 1, idx_left)
+    t_right = torch.gather(rts, 1, idx_right)
+
+    idx_left_exp = idx_left.unsqueeze(1).expand(n_pr, n_ion, target_dim)
+    idx_right_exp = idx_right.unsqueeze(1).expand(n_pr, n_ion, target_dim)
+
+    x_left = torch.gather(x, 2, idx_left_exp)
+    x_right = torch.gather(x, 2, idx_right_exp)
+
+    new_rts_exp = new_rts.unsqueeze(1)
+    t_left_exp = t_left.unsqueeze(1)
+    t_right_exp = t_right.unsqueeze(1)
+
+    eps = 1e-8
+    weight = (new_rts_exp - t_left_exp) / (t_right_exp - t_left_exp + eps)
+    x_interp = x_left + weight * (x_right - x_left)
+
+    return new_rts, x_interp
+
+
+def select_other_profiles(x_profile, best_profile):
+    device = x_profile.device
+    n_pr, n_condition, n_ion, n_cycle = x_profile.shape
+
+    best_profile_exp = best_profile.unsqueeze(1).unsqueeze(1)  # [n_pr, 1, 1, n_cycle]
+
+    # dot
+    dot = (x_profile * best_profile_exp).sum(dim=-1)
+
+    # L2
+    norm_x = x_profile.norm(dim=-1)  # [n_pr, n_condition, n_ion]
+    norm_best = best_profile.norm(dim=-1).unsqueeze(1).unsqueeze(1) # [n_pr, 1, 1]
+
+    # cos
+    cos_sim = dot / (norm_x * norm_best + 1e-8)
+
+    # best
+    best_condition_idx = torch.argmax(cos_sim, dim=1)  # [n_pr, n_ion]
+
+    # select xic
+    pr_idx = torch.arange(n_pr, device=device).unsqueeze(1).expand(n_pr, n_ion)
+    ion_idx = torch.arange(n_ion, device=device).unsqueeze(0).expand(n_pr, n_ion)
+    best_x = x_profile[pr_idx, best_condition_idx, ion_idx, :] # [n_pr, n_ion, n_cycle]
+
+    # select sa
+    best_cos_sim = cos_sim[pr_idx, best_condition_idx, ion_idx]  # [n_pr, n_ion]
+    best_cos_sim_clamped = best_cos_sim.clamp(-1, 1)
+    angles = torch.acos(best_cos_sim_clamped)
+    sas = 1 - 2 * angles / torch.pi
+    assert sas.max().item() <= 1.
+    assert sas.min().item() >= 0.
+
+    return best_x, sas
+
+
+def select_best_profile(x_profile):
+    n_pr, n_ion, n_cycle = x_profile.shape
+
+    x_norm = x_profile / (x_profile.norm(dim=-1, keepdim=True) + 1e-8)
+    cos_sim = torch.matmul(x_norm, x_norm.transpose(1, 2))
+    avg_sim = (cos_sim.sum(dim=-1) - 1.0) / (n_ion - 1)
+    best_ion_idx = torch.argmax(avg_sim, dim=-1)
+
+    pr_indices = torch.arange(n_pr, device=x_profile.device)
+    best_profile = x_profile[pr_indices, best_ion_idx, :]
+
+    return best_profile # [n_pr, n_cycle]
+
+
+def interference_correction(xics, best_profile):
+    r_m = xics / (best_profile[:, None, :] + 1e-7)
+    r_center = r_m[:, :, int(xics.shape[-1] / 2)]
+    bad_idx = r_m > 1.5 * r_center[:, :, None]
+    tmp = 1.5 * r_center[:, :, None] * best_profile[:, None, :]
+    xics[bad_idx] = tmp[bad_idx]
+    return xics
+
+
+@profile
 def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
     locus_start_v = df_batch['score_elute_span_left'].values
+    locus_start_v = torch.from_numpy(locus_start_v).to(param_g.gpu_id)
+
     locus_end_v = df_batch['score_elute_span_right'].values
+    locus_end_v = torch.from_numpy(locus_end_v).to(param_g.gpu_id)
 
     tol_ppm_v = [20., 16., 12., 8., 4.]
     tol_im_v = [0.02, 0.01]
@@ -33,61 +146,35 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
             by_pred=False,
         )
 
-        xics = xics.copy_to_host() # 14 ions
-        mask1 = np.arange(xics.shape[2]) >= locus_start_v[:, None, None]
-        mask2 = np.arange(xics.shape[2]) <= locus_end_v[:, None, None]
-        xics = xics * mask1 * mask2
-        rts, xics = utils.interp_xics(xics, rts, expand_dim)
-        xics = fxic.gpu_simple_smooth(cuda.to_device(xics))
-        xics = xics.copy_to_host()
+        xics = utils.convert_numba_to_tensor(xics) # 14 ions
+        xics = mask_tensor(xics, locus_start_v, locus_end_v)
+        rts, xics = interp_xics(xics, rts, expand_dim)
+        # rts, xics = utils.interp_xics(xics, rts, expand_dim)
+        xics = fxic.gpu_simple_smooth(cuda.as_cuda_array(xics))
+        xics = utils.convert_numba_to_tensor(xics)
 
         # find best profile from top-6
         if search_i == 0:
             xics_top6 = xics[:, 2:8, :]
-            sas = np.array(list(map(utils.cross_cos, xics_top6)))
-            sa_sum = sas.sum(axis=-1)
-            best_ion_idx = sa_sum.argmax(axis=-1)
-            best_profile = xics_top6[np.arange(len(xics_top6)), best_ion_idx]
+            best_profile = select_best_profile(xics_top6) # [n_pr, n_cycle]
 
-            bad_xic = np.abs(best_profile.argmax(axis=-1) - expand_dim/2) > 6
+            # bad_xic by apex
+            bad_xic = torch.abs(best_profile.argmax(dim=-1) - expand_dim/2) > 6
 
             # boundary by best_profile
-            box = best_profile > best_profile.max(axis=-1, keepdims=True) * 0.2
-            left = box.argmax(axis=-1)
-            right = expand_dim - 1 - box[:, ::-1].argmax(axis=-1)
-            df_batch['integral_left'] = left
-            df_batch['integral_right'] = right
+            box = best_profile > best_profile.max(dim=-1, keepdims=True)[0] * 0.2
+            box = box.int()
+            box_left = box.argmax(dim=-1)
+            box_right = expand_dim - 1 - torch.flip(box, dims=[1]).argmax(dim=-1)
 
         xics_v.append(xics) # [tol, n_pep, n_ion, n_cycle]
-    xics = np.transpose(np.stack(xics_v), (1, 0, 2, 3)) # [n_pep, tol, n_ion, n_cycle]
+    xics = torch.stack(xics_v, dim=1) # [n_pep, tol, n_ion, n_cycle]
 
     # find other profile with the help of best_profile
-    ion_num = xics.shape[2]
-    best_profile = np.repeat(
-        best_profile[:, None, :], len(grid_params), axis=1
-    )
-    best_profile = np.repeat(best_profile[:, :, None, :], ion_num, axis=2)
-    dot_sum = (best_profile * xics).sum(axis=-1)
-    norm1 = np.linalg.norm(best_profile, axis=-1) + 1e-6
-    norm2 = np.linalg.norm(xics, axis=-1) + 1e-6
-    sas = dot_sum / (norm1 * norm2) # [n_pep, tol, n_ion]
-    sas[sas > 1.] = 1.
-    sas = 1 - 2 * np.arccos(sas) / np.float32(np.pi)
-    idx = sas.argmax(axis=1)
-    sas = np.take_along_axis(sas, idx[:, None, :], axis=1)[:, 0, :] # [n_pep, n_ion]
-
-    idx_1 = idx.flatten()
-    idx_0 = np.repeat(np.arange(len(xics)), ion_num)
-    idx_2 = np.tile(np.arange(ion_num), len(xics))
-    xics = xics[idx_0, idx_1, idx_2].reshape(len(xics), ion_num, -1)
+    xics, sas = select_other_profiles(xics, best_profile)
 
     # interference correction
-    best_profile = best_profile[:, 0, 0, :]
-    r_m = xics / (best_profile[:, None, :] + 1e-7)
-    r_center = r_m[:, :, int(expand_dim/2)]
-    bad_idx = r_m > 1.5 * r_center[:, :, None]
-    tmp = 1.5 * r_center[:, :, None] * best_profile[:, None, :]
-    xics[bad_idx] = tmp[bad_idx]
+    xics = interference_correction(xics, best_profile)
 
     # bad_xic re-extract
     _, rts2, _, _, xics2 = fxic.extract_xics(
@@ -99,22 +186,30 @@ def grid_xic_best(df_batch, ms1_centroid, ms2_centroid):
         cycle_num=13,
         by_pred=False
     )
-    xics2 = xics2.copy_to_host()
-    mask1 = np.arange(xics2.shape[2]) >= locus_start_v[:, None, None]
-    mask2 = np.arange(xics2.shape[2]) <= locus_end_v[:, None, None]
-    xics2 = xics2 * mask1 * mask2
-    rts2, xics2 = utils.interp_xics(xics2, rts2, expand_dim)
+    xics2 = utils.convert_numba_to_tensor(xics2)  # 14 ions
+    xics2 = mask_tensor(xics2, locus_start_v, locus_end_v)
+    rts2, xics2 = interp_xics(xics2, rts2, expand_dim)
     xics2 = fxic.gpu_simple_smooth(cuda.to_device(xics2))
-    xics2 = xics2.copy_to_host()
+    xics2 = utils.convert_numba_to_tensor(xics2)
 
     xics[bad_xic] = xics2[bad_xic]
-    df_batch.loc[bad_xic, 'integral_left'] = 15 # 3-13, 15-64
-    df_batch.loc[bad_xic, 'integral_right'] = 50 # 9-13, 50-64
+    box_left[bad_xic] = 15 # 3-13, 15-64
+    box_right[bad_xic] = 50 # 9-13, 50-64
 
-    assert np.isnan(sas).sum() == 0
-    return rts, xics, sas
+    # boundary
+    xics = mask_tensor(xics, box_left, box_right)
+
+    # area not using rts: trapz(xics, rts)
+    areas = torch.trapz(xics, dim=-1)
+
+    zeros_idx = (areas == 0) | (sas == 0)
+    areas[zeros_idx] = 0.
+    sas[zeros_idx] = 0.
+
+    return areas.cpu().numpy(), sas.cpu().numpy()
 
 
+@profile
 def quant_center_ions(df_input, ms):
     df_good = []
     for swath_id in df_input['swath_id'].unique():
@@ -130,17 +225,7 @@ def quant_center_ions(df_input, ms):
             df_batch = df_batch.reset_index(drop=True)
 
             # grid search for best profiles
-            rts, xics, sas = grid_xic_best(df_batch, ms1_centroid, ms2_centroid)
-
-            # boundary
-            locus_start_v = df_batch['integral_left'].values
-            locus_end_v = df_batch['integral_right'].values
-            mask1 = np.arange(xics.shape[2]) >= locus_start_v[:, None, None]
-            mask2 = np.arange(xics.shape[2]) <= locus_end_v[:, None, None]
-            xics = xics * mask1 * mask2
-
-            # areas not using rts
-            areas = np.trapz(xics, axis=-1)
+            areas, sas = grid_xic_best(df_batch, ms1_centroid, ms2_centroid)
 
             # save
             cols = ['score_ion_quant_' + str(i) for i in range(param_g.fg_num + 2)]
@@ -150,71 +235,4 @@ def quant_center_ions(df_input, ms):
             df_good.append(df_batch)
         utils.release_gpu_scans(ms1_centroid, ms2_centroid)
     df = pd.concat(df_good, axis=0, ignore_index=True)
-    return df
-
-
-# def quant_pr(df, ms):
-#     # Only for single sun with top-6 ions
-#     df_good = []
-#     for swath_id in df['swath_id'].unique():
-#         df_swath = df[df['swath_id'] == swath_id]
-#         df_swath = df_swath.reset_index(drop=True)
-#
-#         # ms
-#         ms1_centroid, ms2_centroid = ms.copy_map_to_gpu(swath_id, centroid=True)
-#
-#         # in batches
-#         batch_n = param_g.batch_xic_locus
-#         for batch_idx, df_batch in df_swath.groupby(df_swath.index // batch_n):
-#             df_batch = df_batch.reset_index(drop=True)
-#
-#             # grid search for best profiles
-#             rts, xics, sas = grid_xic_best(df_batch, ms1_centroid, ms2_centroid)
-#
-#             # boundary
-#             locus_start_v = df_batch['integral_left'].values
-#             locus_end_v = df_batch['integral_right'].values
-#             mask1 = np.arange(xics.shape[2]) >= locus_start_v[:, None, None]
-#             mask2 = np.arange(xics.shape[2]) <= locus_end_v[:, None, None]
-#             xics = xics * mask1 * mask2
-#
-#             # areas not using rts
-#             areas = np.trapz(xics, axis=-1)
-#             quant_pr = areas.sum(axis=1)
-#             df_batch['quant_pr'] = quant_pr.astype(np.float32)
-#
-#             df_good.append(df_batch)
-#
-#         utils.release_gpu_scans(ms1_centroid, ms2_centroid)
-#
-#     df = pd.concat(df_good, axis=0, ignore_index=True)
-#
-#     min_value =df.loc[df['quant_pr'] > 0, 'quant_pr'].min()
-#     df.loc[df['quant_pr'] <= 0., 'quant_pr'] = min_value
-#     assert df['quant_pr'].min() > 0
-#     return df
-
-
-def quant_pg(df):
-    '''
-    If a pg has >=1 pr within 1%-FDR, sum value of top-n if for its quant.
-    Otherwise, top-1 is its quant.
-    '''
-    df_tmp1 = df[df['q_pr_run'] < 0.01].reset_index(drop=True)
-    df_tmp1 = df_tmp1.groupby('protein_group').apply(
-        lambda x: x.nlargest(param_g.top_k_pr, 'quant_pr')['quant_pr'].mean()
-    ).reset_index(name='quant_pg')
-
-    df_tmp2 = df[~df['protein_group'].isin(df_tmp1['protein_group'])]
-    if len(df_tmp2) > 0:
-        df_tmp2 = df_tmp2.reset_index(drop=True)
-        df_tmp2 = df_tmp2.groupby('protein_group').apply(
-            lambda x: x.nlargest(1, 'quant_pr')['quant_pr'].mean()
-        ).reset_index(name='quant_pg')
-        df_tmp = pd.concat([df_tmp1, df_tmp2])
-    else:
-        df_tmp = df_tmp1
-
-    df = pd.merge(df, df_tmp, on='protein_group', how='outer')
-    assert df['quant_pg'].min() > 0
     return df

@@ -2,14 +2,14 @@ import time
 import struct
 from pathlib import Path
 import multiprocessing as mp
-import pyarrow.parquet as pq
 import numpy as np
 import pandas as pd
 
 from beta_dia.log import Logger
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except:
     profile = lambda x: x
 
@@ -392,9 +392,9 @@ class Library():
 
         # parquet
         if self.lib_type == '.parquet':
-            df = pq.read_pandas(dir_lib)
-            df = df.to_pandas()
+            df = pd.read_parquet(dir_lib)
             assert (df['Fragment.Loss.Type'] == 'noloss').all()
+            df = df[df['Decoy'] == 0].reset_index(drop=True)
 
             self.df_pr, self.df_map = self.construct_parquet_dfs(df)
 
@@ -473,6 +473,9 @@ class Library():
         df_map['protein_id'] = protein_id_v
         df_map['protein_name'] = protein_name_v
         df_map['gene'] = gene_v
+        x = df_map['protein_id'].str.count(';')
+        y = df_map['protein_name'].str.count(';')
+        assert (x == y).all(), 'Protein ID/Name are not corresponding relationships!'
 
         # df_pr
         df_pr = pd.DataFrame()
@@ -570,6 +573,11 @@ class Library():
 
     def polish_lib_by_targets(self, pr_targets):
         self.df_pr = self.df_pr[self.df_pr['pr_id'].isin(pr_targets)]
+        logger.info(f'Polishing spectral library: {len(self.df_pr)} prs')
+
+    def polish_lib_by_idx(self, prs_idx):
+        self.df_pr = self.df_pr[self.df_pr['pr_index'].isin(prs_idx)]
+        logger.info(f'Polishing spectral library: {len(self.df_pr)} prs')
 
     def assign_proteins(self, df):
         # find corresponding protein and name by pr_index
@@ -614,4 +622,10 @@ class Library():
             df.loc[decoy_idx, 'protein_name'] = df.loc[
                 decoy_idx, 'protein_name'].replace(';', ';DECOY_', regex=True)
 
+        return df
+
+    def assign_fg_mz(self, df):
+        cols = ['fg_mz_' + str(i) for i in range(12)]
+        pr_index_q = df['pr_index'].values
+        df[cols] = self.df_pr.loc[pr_index_q, cols].values
         return df

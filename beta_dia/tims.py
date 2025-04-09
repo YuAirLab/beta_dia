@@ -10,7 +10,8 @@ from beta_dia.alphatims import bruker
 from beta_dia.log import Logger
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except:
     profile = lambda x: x
 
@@ -386,11 +387,13 @@ class Tims():
                 )
 
     def get_rt_range(self):
-        (
-            all_rt, cycle_valid_lens, all_push,
-            all_tof, all_height
-        ) = self.d_ms1_maps[1]
+        all_rt = self.d_ms1_maps[1][0]
         return (all_rt.min(), all_rt.max())
+
+    def get_cycle_time(self):
+        all_rt = self.d_ms1_maps[1][0]
+        cycle_time = np.mean(np.diff(all_rt))
+        return cycle_time
 
     @profile
     def copy_map_to_gpu(self, swath_id, centroid):

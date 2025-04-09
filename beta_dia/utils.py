@@ -1,6 +1,4 @@
 import argparse
-import pyarrow as pa
-import pyarrow.parquet as pq
 import warnings
 from pathlib import Path
 
@@ -20,7 +18,8 @@ from beta_dia.log import Logger
 from beta_dia import __version__
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except NameError:
     profile = lambda x: x
 
@@ -194,33 +193,48 @@ def cal_acc_recall(path_ws, df_input,
 
 
 def save_as_pkl(df, fname):
-    if param_g.is_compare_mode:
+    if param_g.is_compare_mode and (param_g.phase == 'First'):
         df.to_pickle(param_g.dir_out_single / fname)
 
 
-def save_as_pq(df, ws_single):
-    cols = ['pr_id', 'pr_charge', 'pr_index',
+def save_or_clean(df_main, df_other, ws_single, phase):
+    cols_base = ['pr_id', 'pr_charge', 'pr_index',
             'swath_id', 'decoy', 'locus',
-            'measure_rt', 'measure_im', 'cscore_pr_run', 'q_pr_run',
-            'is_main']
-    # cols += ['score_center_elution_' + str(i) for i in range(14)]
-    cols += ['score_elute_span']
-    # cols += list(df.columns[df.columns.str.startswith('score_')])
-    cols += ['score_ion_quant_' + str(i) for i in range(14)]
+            'measure_rt', 'measure_im'
+            ]
+    cols = cols_base + ['cscore_pr_run', 'q_pr_run',]
+    df_main = df_main.loc[:, cols]
+
+    cols = cols_base + ['score_ion_quant_' + str(i) for i in range(14)]
     cols += ['score_ion_sa_' + str(i) for i in range(14)]
-    cols += ['fg_mz_' + str(i) for i in range(12)]
-    df = df.loc[:, cols]
-    table = pa.Table.from_pandas(df)
-    output_file = param_g.dir_out_global/(ws_single.name + '.parquet')
-    pq.write_table(table, output_file)
+    df_other = df_other.loc[:, cols]
+
+    # assert set(df_main['pr_index']).issubset(set(df_other['pr_index']))
+    df = pd.merge(df_main, df_other, on=cols_base, how='outer')
+
+    # dtype
+    df['locus'] = df['locus'].astype(np.int32)
+    cols_big = df.select_dtypes(include=[np.float64]).columns
+    df[cols_big] = df[cols_big].astype(np.float32)
+
+    if phase == 'First':
+        output_file = param_g.dir_out_global / (ws_single.name + '.parquet')
+        df.to_parquet(output_file)
+    else:
+        return df
+
+
+def save_lib(df):
+    output_file = param_g.dir_out_global / 'report-lib.parquet'
+    df.to_parquet(output_file)
 
 
 def read_from_pq(ws_single, cols=None):
     fname = param_g.dir_out_global / (ws_single.name + '.parquet')
     if cols is None:
-        df = pq.read_pandas(fname).to_pandas()
+        df = pd.read_parquet(fname)
     else:
-        df = pq.read_pandas(fname, columns=cols).to_pandas()
+        df = pd.read_parquet(fname, columns=cols)
     return df
 
 
@@ -263,6 +277,8 @@ def cal_sa_by_np(x, y):
 
 
 def convert_cols_to_diann(df, ws_single):
+    df = df[df['decoy'] == 0].reset_index(drop=True)
+
     df['file_name'] = '/'.join(ws_single.parts[-2:])
     df['run'] = ws_single.stem
 
@@ -280,17 +296,19 @@ def convert_cols_to_diann(df, ws_single):
         'protein_group': 'Protein.Group',
         'protein_id': 'Protein.Ids',
         'protein_name': 'Protein.Names',
-        'quant_pg': 'PG.Quantity',
+        'quant_pg_raw': 'PG.Quantity.Raw',
+        'quant_pg_deep': 'PG.Quantity.Deep',
+        'quant_pg_mix': 'PG.Quantity.Mix',
         'pr_id': 'Precursor.Id',
         'pr_charge': 'Precursor.Charge',
         'q_pr_run': 'Q.Value',
-        'q_pr_global_second': 'Global.Q.Value',
+        'q_pr_global': 'Global.Q.Value',
         'q_pg_run': 'PG.Q.Value',
-        'q_pg_global_second': 'Global.PG.Q.Value',
+        'q_pg_global': 'Global.PG.Q.Value',
         'proteotypic': 'Proteotypic',
-        'quant_pr_deep': 'Precursor.Quantity.Deep',
         'quant_pr_raw': 'Precursor.Quantity.Raw',
-        'quant_pr': 'Precursor.Quantity',
+        'quant_pr_deep': 'Precursor.Quantity.Deep',
+        'quant_pr_mix': 'Precursor.Quantity.Mix',
         'measure_rt': 'RT',
         'ion_sa': 'Fragment.Correlations',
         'ion_quant': 'Fragment.Quant.Raw',
@@ -301,11 +319,12 @@ def convert_cols_to_diann(df, ws_single):
         'File.Name', 'Run',
         # PG
         'Protein.Group', 'Protein.Ids', 'Protein.Names',
-        'PG.Q.Value', 'Global.PG.Q.Value', 'PG.Quantity',
+        'PG.Q.Value', 'Global.PG.Q.Value',
+        'PG.Quantity.Raw', 'PG.Quantity.Deep', 'PG.Quantity.Mix',
         # Pr
         'Precursor.Id', 'Precursor.Charge', 'Proteotypic',
         'Q.Value', 'Global.Q.Value',  # 'CScore',
-        'Precursor.Quantity.Raw', 'Precursor.Quantity.Deep', 'Precursor.Quantity',
+        'Precursor.Quantity.Raw', 'Precursor.Quantity.Deep', 'Precursor.Quantity.Mix',
         'Fragment.Quant.Raw', 'Fragment.Correlations', 'RT', 'IM'
     ]]
     return df
@@ -342,6 +361,10 @@ def get_args():
         '-low_memory', action='store_true',
         help='Specify whether running in low memory mode. Default: False'
     )
+    parser.add_argument(
+        '-overwrite', action='store_true',
+        help='Specify whether overwrite the existing run-specific analysed files. Default: False'
+    )
     # develop
     parser.add_argument(
         '-compare', action='store_true',
@@ -352,8 +375,9 @@ def get_args():
     args = parser.parse_args()
     init_gpu_params(args.gpu_id)
     param_g.is_compare_mode = args.compare
+    param_g.is_overwrite = args.overwrite
     if args.low_memory:
-        param_g.target_batch_max = 150000
+        param_g.target_batch_max = 250000
 
     return Path(args.ws), Path(args.lib), args.out_name
 
@@ -384,6 +408,7 @@ def init_gpu_params(gpu_id):
 def init_multi_ws(ws_global, out_name):
     # output for global
     param_g.ws_global = ws_global
+    param_g.dir_out_name = out_name
     param_g.dir_out_global = (ws_global / out_name)
     param_g.dir_out_global.mkdir(exist_ok=True)
     Logger.set_logger(param_g.dir_out_global, is_time_name=param_g.is_time_log)
@@ -435,13 +460,13 @@ def init_multi_ws(ws_global, out_name):
         logger.warning(info)
 
 
-def init_single_ws(ws_i, total, ws_single, out_name):
+def init_single_ws(ws_i, total, ws_single):
     param_g.ws_single = ws_single
-    param_g.dir_out_single = (ws_single / out_name)
+    param_g.dir_out_single = (ws_single / param_g.dir_out_name)
     if param_g.is_compare_mode:
         param_g.dir_out_global.mkdir(exist_ok=True)
 
-    logger.info(f'====================={ws_i+1}/{total}=====================')
+    logger.info(f'================Run: {ws_i+1}/{total}================')
     logger.info(f'.d: {str(ws_single.name)}')
 
 
@@ -460,6 +485,59 @@ def cross_cos(x):
     cosine_sim = np.dot(normalized_x, normalized_x.T)
     return cosine_sim
 
+
+def cal_kde(labels, choice_size=10000):
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.neighbors import KernelDensity
+
+    # sample labels
+    choice_size = min(choice_size, len(labels))
+    labels_sample = np.random.choice(labels, size=choice_size, replace=False)
+
+    # init bandwidth by Silverman
+    b = 1.06 * np.std(labels_sample) * choice_size**(-1/5)
+    bandwidths = np.linspace(0.1 * b, 1.5 * b, 20)
+
+    # grid search for bandwidth
+    grid = GridSearchCV(KernelDensity(kernel='gaussian'),
+                        param_grid={'bandwidth': bandwidths},
+                        cv=5,
+                        n_jobs=1 if __debug__ else 8)
+    grid.fit(labels_sample[:, None])
+    best_bandwidth = grid.best_params_['bandwidth']
+
+    # fit by sample
+    best_kde = KernelDensity(kernel='gaussian', bandwidth=best_bandwidth)
+    best_kde.fit(labels_sample[:, None])
+
+    # pred for grid
+    x_grid = np.linspace(labels.min(), labels.max(), 1000)
+    log_density_grid = best_kde.score_samples(x_grid[:, None])
+    density_grid = np.exp(log_density_grid)
+
+    # interp
+    from scipy.interpolate import interp1d
+    interp_func = interp1d(x_grid, density_grid, fill_value="extrapolate")
+
+    # pred for all
+    density = interp_func(labels)
+
+    # cal weights
+    weights = 1 / (density + 1e-6)
+    # weights = np.log2(1 + np.sqrt(weights))
+    # weights = (weights - weights.min()) / (weights.max() - weights.min())
+    weights = np.clip(weights, None, 200* weights.min())
+    return weights
+
+
+def cal_pccs(X):
+    from scipy.stats import pearsonr
+    x = np.arange(X.shape[1])
+    pccs = np.array([pearsonr(x, row)[0] for row in X])
+
+    # x = X[np.where(pccs == np.median(pccs))[0][0]]
+    # pccs = np.array([pearsonr(x, row)[0] for row in X])
+    return pccs
 
 @jit(nopython=True, nogil=True, parallel=True)
 def interp_xics(xics, rts, target_dim):
@@ -488,10 +566,7 @@ def print_ids(df, q_cut, pr_or_pg, run_or_global):
         ids = []
         for q_pr in [0.01, q_cut]:
             df_sub = df[(df['q_pr_' + run_or_global] <= q_pr)]
-            if 'is_main' in df_sub.columns:
-                df_sub = df_sub[(df_sub['decoy'] == 0) & df_sub['is_main']]
-            else:
-                df_sub = df_sub[(df_sub['decoy'] == 0)]
+            df_sub = df_sub[(df_sub['decoy'] == 0)]
             ids.append(df_sub.pr_id.nunique())
             if param_g.is_compare_mode and (run_or_global == 'run'):
                 cal_acc_recall(param_g.ws_single, df_sub, diann_q_pr=0.01)
@@ -505,10 +580,7 @@ def print_ids(df, q_cut, pr_or_pg, run_or_global):
         ids = []
         for q_pg in [0.01, q_cut]:
             df_sub = df[(df['q_pg_' + run_or_global] <= q_pg)]
-            if 'is_main' in df_sub.columns:
-                df_sub = df_sub[(df_sub['decoy'] == 0) & df_sub['is_main']]
-            else:
-                df_sub = df_sub[(df_sub['decoy'] == 0)]
+            df_sub = df_sub[(df_sub['decoy'] == 0)]
             ids.append(df_sub['protein_group'].nunique())
         id100 = df[df['decoy'] == 0]['protein_group'].nunique()
         info = 'Ids-Protein Group at {} FDR: {}-0.01, {}-{:.2f}, {}-all'.format(
@@ -517,18 +589,18 @@ def print_ids(df, q_cut, pr_or_pg, run_or_global):
         logger.info(info)
 
 
-def print_external_global_fdr(df, first_or_second):
+def print_external_global_fdr(df):
     for fdr in [0.01, 0.05]:
-        total = (df['q_pr_global_' + first_or_second] < fdr) & (df['decoy'] == 0)
-        bad = ((df['q_pr_global_' + first_or_second] < fdr) & (df['decoy'] == 0) &
+        total = (df['q_pr_global'] < fdr) & (df['decoy'] == 0)
+        bad = ((df['q_pr_global'] < fdr) & (df['decoy'] == 0) &
                (df['protein_name'].str.contains('ARATH')) &
                (~df['protein_name'].str.contains('HUMAN'))
               )
         external_fdr = sum(bad) / sum(total)
         print(f'Global Pr level: {fdr:.3f}-{external_fdr:.3f}')
     for fdr in [0.01, 0.05]:
-        total = (df['q_pg_global_' + first_or_second] < fdr) & (df['decoy'] == 0)
-        bad = ((df['q_pg_global_' + first_or_second] < fdr) & (df['decoy'] == 0) &
+        total = (df['q_pg_global'] < fdr) & (df['decoy'] == 0)
+        bad = ((df['q_pg_global'] < fdr) & (df['decoy'] == 0) &
                (df['protein_name'].str.contains('ARATH')) &
                (~df['protein_name'].str.contains('HUMAN'))
                )

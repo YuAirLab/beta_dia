@@ -16,7 +16,8 @@ from beta_dia.log import Logger
 logger = Logger.get_logger()
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except:
     profile = lambda x: x
 
@@ -407,10 +408,10 @@ def refine_models(df_top, ms, model_center, model_big):
     Returns:
         model_center, model_big, model_mall
     '''
-    logger.info('Refine models: start to extract maps and malls...')
+    logger.info('Extracting maps and malls to refine models...')
     maps_center, maps_big, malls, valid_nums, labels = extract_map_by_compare(
         df_top, ms)
-    logger.info('Refine models: end to extract maps and malls.')
+    # logger.info('Refine models: end to extract maps and malls.')
 
     model_center = retrain_model_map(model_center,
                                      maps_center,

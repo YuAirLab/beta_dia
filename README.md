@@ -23,13 +23,13 @@ We recommend using [Conda](https://www.anaconda.com/) to create a Python environ
   - CUDA-12
     ```bash
     pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cu121
-    pip install cupy-cuda12x
+    pip install cupy-cuda12x==13.3
     conda install cudatoolkit
     ```
   - CUDA-11
     ```bash
     pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cu118
-    pip install cupy-cuda11x
+    pip install cupy-cuda11x==13.3
     conda install cudatoolkit
     ```
 
@@ -147,3 +147,5 @@ optimize the proteome profiling of diaPASEF mass spectrometry data**](https://ww
   * FIX: best profile bug
   * FIX: NN epoch sets to 1 to minimize overfit
   * FEAT: support DeepQuant 
+#### 0.9.5
+  * FEAT: no missing values; DeepQuant'll trained on species level

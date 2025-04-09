@@ -7,7 +7,8 @@ from beta_dia import utils
 from beta_dia.log import Logger
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except:
     profile = lambda x: x
 

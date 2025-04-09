@@ -4,7 +4,8 @@ from torch.nn.utils.rnn import PackedSequence
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except:
     profile = lambda x: x
 
@@ -188,22 +189,22 @@ class DeepQuant(nn.Module):
         # self.fc_sa = nn.Linear(n_run*n_ion, n_run*16)
         self.encoder = nn.Sequential(
             nn.Linear(n_run*n_ion*3, 64),
-            nn.BatchNorm1d(64),
+            # nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout(0.01),
+            # nn.Dropout(0.01),
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, 16)
         )
         self.decoder = nn.Sequential(
             nn.Linear(16, 32),
-            nn.BatchNorm1d(32),
+            # nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(0.01),
+            # nn.Dropout(0.01),
             nn.Linear(32, 64),
             nn.ReLU(),
             nn.Linear(64, n_run*n_ion),  # reconstruct the intensities
-            nn.ReLU() # non-negtive
+            nn.Sigmoid() # non-negtive
         )
 
     def forward(self, x_area1, x_area2, x_sa):

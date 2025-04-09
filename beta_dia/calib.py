@@ -16,7 +16,8 @@ from beta_dia.log import Logger
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except NameError:
     profile = lambda x: x
 
@@ -71,7 +72,7 @@ def update_info_rt(df_seed, df_lib):
     tol_turn = cal_turning_point(y0, f(x0))
     tol_ratio = param_g.tol_rt
     param_g.tol_rt = max(tol_ratio, tol_turn)
-    info = 'tol_rt, by ratio: {:.2f}, by seed: {:.2f}, final: {:.2f}'.format(
+    info = 'tol_rt, by ratio: {:.2f}, by seed: {:.2f}, pre-select: {:.2f}'.format(
         tol_ratio, tol_turn, param_g.tol_rt
     )
     logger.info(info)
@@ -86,9 +87,7 @@ def update_info_rt(df_seed, df_lib):
     df = df.reset_index(drop=True)
     bias = df['pred_rt'].values - df['measure_rt'].values
 
-    info = 'After maximum for each locus-time and tol_turn, #seed: {}'.format(
-        len(df)
-    )
+    info = 'Calib RT/IM/MZ by #seed: {}'.format(len(df))
     logger.info(info)
     utils.cal_acc_recall(param_g.ws_single, df, diann_q_pr=0.01)
 
@@ -160,7 +159,7 @@ def update_info_im(df_tol, df_lib):
     # param_g.tol_im = np.abs(bias_after).max()
     # info = 'updated tol_im: {:.4f}'.format(param_g.tol_im)
     # logger.info(info)
-    logger.info('Keep tol_im: 0.05')
+    # logger.info('Keep tol_im: 0.05')
 
     # pred and screen for df_seed
     pred_ims = f(df_tol['pred_iim'].values).astype(np.float32)
@@ -230,7 +229,7 @@ def update_info_mz(df_seed, ms):
     # param_g.tol_ppm = np.abs(bias_after).max()
     # info = 'updated tol_ppm: {:.2f}'.format(param_g.tol_ppm)
     # logger.info(info)
-    logger.info('Keep tol_ppm: 20')
+    # logger.info('Keep tol_ppm: 20')
 
     if param_g.is_compare_mode:
         plot_fit_mz(x_good, y_good,

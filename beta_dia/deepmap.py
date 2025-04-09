@@ -11,7 +11,8 @@ from beta_dia import utils
 from beta_dia.utils import create_cuda_zeros
 
 try:
-    profile
+    # profile
+    profile = lambda x: x
 except:
     profile = lambda x: x
 
